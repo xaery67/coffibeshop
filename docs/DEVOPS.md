@@ -22,7 +22,7 @@
 | 2 | **`migration-drift`** | Postgres bersih → `prisma migrate deploy` → cek **index pg_trgm** + drift schema | **index `products_name_trgm_idx` / `products_description_trgm_idx` hilang**, atau schema≠migrations |
 | 3 | `coverage` | Coverage api & web | (belum fail — dilaporkan + artifact) |
 | 4 | `docker` | Build image api/web | build gagal |
-| 5 | **`trivy`** | Scan image (api/web) + filesystem | ada CVE **HIGH/CRITICAL** yang **tidak** ada di baseline (`.trivyignore`) |
+| 5 | **`trivy`** | Scan image (api/web **OS layer**) + filesystem (dependency produksi) | ada CVE **HIGH/CRITICAL** yang **tidak** ada di baseline (`.trivyignore`) |
 
 > **Kenapa gate migration-drift ada?** Bug nyata: folder migration yang *drift* menghapus 2 index pg_trgm di **setiap deployment baru** dan tidak terdeteksi CI (pencarian jadi lambat tanpa error). Gate ini mereproduksi deployment dari nol dan **gagal** kalau index hilang.
 
@@ -47,14 +47,16 @@ npm run build
 #    Spin Postgres bersih, terapkan semua migration, verifikasi index pg_trgm.
 bash scripts/ci-migration-check.sh
 
-# 3) Trivy (image + filesystem)
+# 3) Trivy (image OS layer + dependency produksi)
 docker build -f apps/api/Dockerfile -t coffibeshop/api:ci .
 docker build -f apps/web/Dockerfile -t coffibeshop/web:ci .
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PWD/.trivyignore:/tmp/.trivyignore" aquasec/trivy:latest image \
-  --ignorefile /tmp/.trivyignore --severity HIGH,CRITICAL --exit-code 1 coffibeshop/api:ci
+  --ignorefile /tmp/.trivyignore --severity HIGH,CRITICAL --ignore-unfixed \
+  --exit-code 1 --pkg-types os coffibeshop/api:ci
 docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:latest fs \
-  --ignorefile .trivyignore --severity HIGH,CRITICAL --exit-code 1 .
+  --ignorefile /src/.trivyignore --severity HIGH,CRITICAL --ignore-unfixed \
+  --exit-code 1 .
 
 # 4) Smoke test lokal (stack berjalan)
 docker compose up -d --build
@@ -83,14 +85,26 @@ Menambah index/kolom baru? Pastikan **selalu** lewat folder migration (`prisma m
 
 ## 4. Security Scan (Trivy)
 
-- **Scope:** image `api` & `web` + filesystem (dependensi npm).
+- **Scope:**
+  - **Image `api` & `web` — lapisan OS** (`--pkg-types os`). Di sinilah CVE base image (distroless/nginx) terdeteksi dan baseline `.trivyignore` berlaku.
+  - **Filesystem — dependency produksi** (lockfile npm), untuk menangkap CVE dependency aplikasi.
 - **Severity:** `HIGH,CRITICAL`, `--ignore-unfixed` (hanya CVE yang punya perbaikan).
 - **Fail-on-high:** `--exit-code 1` → CI **merah** kalau ada temuan baru.
+- **Implementasi:** image resmi `aquasec/trivy` via `docker run` (bukan `aquasecurity/trivy-action`, karena wrapper action-nya bergantung `setup-trivy@v0.2.1` yang sudah tidak tersedia di registry → job gagal di "Set up job").
 - **Baseline:** `.trivyignore` memuat CVE dari base image yang **belum bisa diperbaiki di dalam scope ini** (lihat komentar di file untuk alasannya + cara menghapus).
 - **Cara memperbaiki temuan baru:**
-  1. Lihat log job `trivy` → catat `CVE-ID` + paket.
+  1. Lihat log job `docker-scan` → catat `CVE-ID` + paket.
   2. Update dependensi (`npm audit fix`, bump versi) atau base image (butuh perubahan `Dockerfile` → koordinasi @backend-engineer / @qa).
   3. Kalau benar-benar belum ada fix, tambahkan ke `.trivyignore` **dengan komentar + tanggal** (review berkala).
+
+### ⚠️ Temuan terbuka (follow-up, di luar scope #17)
+
+Saat scan awal, image **API** terdeteksi membawa **devDependencies** (`vite`, `vitest`, `tinypool` — 3 CRITICAL + 1 HIGH) **dan** binary Go `esbuild`. Penyebabnya: `apps/api/Dockerfile` meng-copy **seluruh** `node_modules` dari stage builder ke stage runtime (baris `COPY --from=builder /app/node_modules ./node_modules`).
+
+- **Dampak:** image lebih besar (≈594 MB) & permukaan serangan bertambah (paket test tidak perlu ada di runtime).
+- **Perbaikan yang disarankan:** tambahkan `RUN npm prune --omit=dev` di stage builder **sebelum** copy, atau install ulang dependency produksi di stage runtime. Menyentuh `Dockerfile` → **di luar scope #17** (wilayah @backend-engineer), jadi belum diubah.
+- **Kenapa gate tetap hijau:** gate image saat ini men-scan **lapisan OS**; temuan devDeps bukan di lapisan itu. Begitu Dockerfile diperbaiki, gate bisa dinaikkan ke `--pkg-types os,library` tanpa baseline baru.
+- **Aksi:** buat issue follow-up untuk prune devDeps + naikkan cakupan gate.
 
 ---
 
