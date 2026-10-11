@@ -1,8 +1,9 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
 import { redisCache } from '../../config/redis.js';
+import { env } from '../../config/env.js';
 import { BadRequest, NotFound, Forbidden, Conflict } from '../../lib/http.js';
-import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart } from './cart.service.js';
+import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart, normalizeCartItemInput, readCartMeta, writeCartMeta, clearCartMeta } from './cart.service.js';
 import { publishOrderEvent } from './sse.controller.js';
 
 export class OrderService {
@@ -15,7 +16,7 @@ export class OrderService {
   async addItem(userId: string | undefined, guestId: string | undefined, input: any) {
     const key = cartKeyFor(userId, guestId);
     const items = await readCart(key);
-    const item = { id: randomUUID(), ...input, option_ids: input.option_ids ?? [] };
+    const item = { id: randomUUID(), ...normalizeCartItemInput(input) };
     items.push(item);
     await writeCart(key, items);
     return priceCart(items);
@@ -27,7 +28,11 @@ export class OrderService {
     const idx = items.findIndex((i: any) => i.id === id);
     if (idx === -1) throw NotFound('Item tidak ada di cart');
     if (body.qty) items[idx].qty = body.qty;
+    if (body.quantity) items[idx].qty = body.quantity;
     if (body.notes !== undefined) items[idx].notes = body.notes;
+    // allow updating options
+    if (body.option_ids) items[idx].option_ids = body.option_ids;
+    if (body.selected_options) items[idx].option_ids = body.selected_options;
     await writeCart(key, items);
     return priceCart(items);
   }
@@ -43,12 +48,61 @@ export class OrderService {
     const key = cartKeyFor(userId, guestId);
     const items = await readCart(key);
     let discount = 0;
+    let pointsDiscount = 0;
+    let voucherCode: string | undefined;
+
     if (body?.voucher_code) {
-      const v = await prisma.voucher.findFirst({ where: { code: body.voucher_code, is_active: true } });
+      const v = await prisma.voucher.findFirst({ 
+        where: { 
+          code: body.voucher_code, 
+          is_active: true,
+        } 
+      });
       if (!v) throw NotFound('Voucher tidak valid');
-      discount = Number(v.discount_amount ?? 0);
+      
+      // validasi min_purchase
+      const priced = await priceCart(items);
+      if (v.min_purchase && priced.subtotal < Number(v.min_purchase)) {
+        throw BadRequest(`Minimal belanja Rp ${v.min_purchase} untuk voucher ini`);
+      }
+      // validasi expires_at
+      if (v.expires_at && new Date(v.expires_at) < new Date()) {
+        throw BadRequest('Voucher sudah kadaluarsa');
+      }
+      discount = Number(v.discount_amount);
+      voucherCode = v.code;
     }
-    return priceCart(items, { discount });
+
+    // bug #7: penukaran poin
+    if (body?.points_to_redeem && userId) {
+      const pointsToRedeem = Number(body.points_to_redeem);
+      if (pointsToRedeem > 0) {
+        // cek saldo poin member (LoyaltyPoint pakai field `points` dan `type`)
+        const earned = await prisma.loyaltyPoint.aggregate({
+          where: { user_id: userId, type: 'earned' },
+          _sum: { points: true },
+        });
+        const redeemed = await prisma.loyaltyPoint.aggregate({
+          where: { user_id: userId, type: 'redeemed' },
+          _sum: { points: true },
+        });
+        const balance = (earned._sum.points ?? 0) - (redeemed._sum.points ?? 0);
+        if (pointsToRedeem > balance) {
+          throw BadRequest('Saldo poin tidak cukup');
+        }
+        pointsDiscount = pointsToRedeem * env.POINT_VALUE;
+      }
+    }
+
+    // Simpan meta ke Redis (voucher, discount, points)
+    await writeCartMeta(key, {
+      voucher_code: voucherCode,
+      discount,
+      points_to_redeem: body?.points_to_redeem ? Number(body.points_to_redeem) : undefined,
+      points_discount: pointsDiscount,
+    });
+
+    return priceCart(items, { discount, pointsDiscount });
   }
 
   async merge(userId: string, guestId: string) {
@@ -61,47 +115,128 @@ export class OrderService {
     const items = await readCart(key);
     if (!items.length) throw BadRequest('Cart kosong');
 
-    const priced = await priceCart(items);
+    // Normalisasi items untuk memastikan field konsisten
+    const normalizedItems = items.map(normalizeCartItemInput);
+    
+    // Baca meta cart (voucher, points)
+    const meta = await readCartMeta(key);
+    const discount = meta?.discount ?? 0;
+    const pointsDiscount = meta?.points_discount ?? 0;
+    const pointsToRedeem = meta?.points_to_redeem ?? 0;
+    const voucherCode = meta?.voucher_code;
+
+    const priced = await priceCart(normalizedItems, { 
+      shipping: input.fulfillment_type === 'delivery' ? env.SHIPPING_FLAT_FEE : 0,
+      discount,
+      pointsDiscount,
+    });
     if (priced.items.some((i: any) => i.unavailable)) throw Conflict('Ada item yang tidak tersedia');
 
     const order_number = `CS-${Date.now().toString(36).toUpperCase()}`;
     const tracking_token = randomBytes(32).toString('base64url');
 
-    const order = await prisma.order.create({
-      data: {
-        order_number,
-        user_id: userId ?? null,
-        status: 'PENDING',
-        total: priced.total,
-        subtotal: priced.subtotal,
-        tax: priced.tax,
-        shipping_fee: priced.shipping_fee,
-        discount: priced.discount,
-        fulfillment_type: input.fulfillment_type ?? 'pickup',
-        payment_method: input.payment_method ?? 'qris',
-        tracking_token,
-        notes: input.notes ?? null,
-      },
-    });
+    // bug #2: atomic transaction (order + items + status log)
+    const result = await prisma.$transaction(async (tx) => {
+      const order = await tx.order.create({
+        data: {
+          order_number,
+          user_id: userId ?? null,
+          status: 'PENDING',
+          total: priced.total,
+          subtotal: priced.subtotal,
+          tax: priced.tax,
+          shipping_fee: priced.shipping_fee,
+          discount: priced.discount,
+          points_discount: priced.points_discount,
+          voucher_code: voucherCode ?? null,
+          fulfillment_type: input.fulfillment_type ?? 'pickup',
+          payment_method: input.payment_method ?? 'qris',
+          tracking_token,
+          notes: input.notes ?? null,
+        },
+      });
 
-    await prisma.orderItem.createMany({
-      data: items.map((i: any) => ({
-        order_id: order.id,
-        product_id: i.product_id,
-        variant_id: i.variant_id ?? null,
-        qty: i.qty,
-        unit_price: 0,
-        line_total: 0,
-      })),
+      // OrderStatusLog awal (bug #5) - gunakan to_status sesuai schema
+      await tx.orderStatusLog.create({
+        data: {
+          order_id: order.id,
+          to_status: 'PENDING',
+          note: 'Order dibuat',
+          changed_by: userId ?? null,
+        },
+      });
+
+      // Batch fetch produk+opsi untuk snapshot opsi (N+1 fix bug #4)
+      const productIds = [...new Set(normalizedItems.map(i => i.product_id))];
+      const products = await tx.product.findMany({
+        where: { id: { in: productIds } },
+        include: { variants: true, options: { include: { values: true } } },
+      });
+      const productMap = new Map(products.map(p => [p.id, p]));
+
+      // OrderItems dengan unit_price, line_total, options (bug #3, #4)
+      for (const item of normalizedItems) {
+        const pricedItem = priced.items.find(p => 
+          p.product_id === item.product_id && 
+          p.variant_id === item.variant_id && 
+          JSON.stringify(p.option_ids?.sort() ?? []) === JSON.stringify(item.option_ids?.sort() ?? [])
+        );
+        
+        // Snapshot opsi terpilih (bug #4)
+        const selectedOptions = [];
+        if (item.option_ids?.length) {
+          const product = productMap.get(item.product_id);
+          if (product) {
+            const allValues = product.options.flatMap(o => o.values);
+            for (const oid of item.option_ids) {
+              const v = allValues.find(x => x.id === oid);
+              if (v) {
+                selectedOptions.push({
+                  option_value_id: v.id,
+                  name: v.value,
+                  price_adjustment: Number(v.price_adjustment),
+                });
+              }
+            }
+          }
+        }
+
+        await tx.orderItem.create({
+          data: {
+            order_id: order.id,
+            product_id: item.product_id,
+            variant_id: item.variant_id ?? null,
+            qty: item.qty,
+            unit_price: pricedItem?.unit_price ?? 0,
+            line_total: pricedItem?.line_total ?? 0,
+            options: selectedOptions,
+          },
+        });
+      }
+
+      // Loyalty points redeemed (bug #7) - buat record redeemed di dalam TX
+      if (userId && pointsToRedeem > 0) {
+        await tx.loyaltyPoint.create({
+          data: {
+            user_id: userId,
+            points: pointsToRedeem,
+            type: 'redeemed',
+            order_id: order.id,
+          },
+        });
+      }
+
+      return { order, tracking_token };
     });
 
     await redisCache.del(key);
+    await clearCartMeta(key);
     return {
-      order_id: order.id,
+      order_id: result.order.id,
       order_number,
       status: 'PENDING',
-      tracking_token,
-      payment_initiate_url: `/api/v1/payments/initiate?order_id=${order.id}`,
+      tracking_token: result.tracking_token,
+      payment_initiate_url: `/api/v1/payments/initiate?order_id=${result.order.id}`,
     };
   }
 
@@ -178,11 +313,44 @@ export class OrderService {
   }
 
   async updateStatus(orderId: string, body: any) {
-    const order = await prisma.order.update({
-      where: { id: orderId },
-      data: { status: body.status },
+    // Validasi transisi status kanonik
+    const validTransitions: Record<string, string[]> = {
+      PENDING: ['PAID', 'CANCELLED'],
+      PAID: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['BEING_PREPARED', 'CANCELLED'],
+      BEING_PREPARED: ['READY', 'CANCELLED'],
+      READY: ['COMPLETED', 'CANCELLED'],
+      COMPLETED: [],
+      CANCELLED: [],
+    };
+
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw NotFound('Order tidak ditemukan');
+
+    const allowed = validTransitions[order.status] ?? [];
+    if (!allowed.includes(body.status)) {
+      throw Conflict(`Transisi ${order.status} → ${body.status} tidak diizinkan`);
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const o = await tx.order.update({
+        where: { id: orderId },
+        data: { status: body.status },
+      });
+
+      await tx.orderStatusLog.create({
+        data: {
+          order_id: orderId,
+          to_status: body.status,
+          note: body.note ?? null,
+          changed_by: body.changed_by ?? null,
+        },
+      });
+
+      return o;
     });
-    publishOrderEvent(orderId, { status: order.status, timestamp: new Date().toISOString() });
-    return order;
+
+    publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
+    return updated;
   }
 }
