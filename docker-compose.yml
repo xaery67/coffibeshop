@@ -62,6 +62,20 @@ services:
       REDIS_QUEUE_URL: redis://redis:6379
       JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
+
+      # ── Pass-through dari .env (root) — nilai diambil saat `docker compose up` ──
+      # Hanya variabel yang aman & sudah nyata yang diteruskan. Placeholder
+      # Supabase/Upstash (<...>) SENGAJA belum diteruskan: nilainya akan
+      # menggagalkan validasi URL di apps/api/src/config/env.ts saat boot.
+      # Payment — Midtrans sandbox (issue #7)
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
+      MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
+      MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      # Business config (dapat di-override lewat .env)
+      TAX_RATE: ${TAX_RATE:-0.11}
+      POINT_VALUE: ${POINT_VALUE:-1}
+      CURRENCY: ${CURRENCY:-IDR}
+      SHIPPING_FLAT_FEE: ${SHIPPING_FLAT_FEE:-10000}
     ports:
       - "4000:4000"
     volumes:

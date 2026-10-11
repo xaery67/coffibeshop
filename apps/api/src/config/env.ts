@@ -35,9 +35,15 @@ const EnvSchema = z.object({
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('7d'),
 
-  // Payment
+  // Payment — Midtrans (sandbox/live) + Xendit (failover, opsional)
   MIDTRANS_SERVER_KEY: z.string().optional(),
+  MIDTRANS_CLIENT_KEY: z.string().optional(),
+  MIDTRANS_IS_PRODUCTION: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   XENDIT_SECRET_KEY: z.string().optional(),
+  XENDIT_CALLBACK_TOKEN: z.string().optional(),
 
   // Business config
   TAX_RATE: z.coerce.number().default(0.11),
