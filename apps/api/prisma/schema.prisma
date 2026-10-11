@@ -3,7 +3,8 @@
 // Jalankan: npm run db:generate && npm run db:migrate:dev
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
 }
 
 datasource db {
