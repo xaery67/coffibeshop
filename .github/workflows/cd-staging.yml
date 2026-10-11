@@ -35,7 +35,7 @@ jobs:
 
       - name: Build and push API
         if: steps.check.outputs.configured == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/api/Dockerfile
@@ -44,7 +44,7 @@ jobs:
 
       - name: Build and push Web
         if: steps.check.outputs.configured == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/web/Dockerfile
