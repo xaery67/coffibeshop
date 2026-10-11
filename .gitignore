@@ -70,3 +70,7 @@ desktop.ini
 tmp/
 *.pid
 .eslintcache
+
+# JWT RS256 keypair (dev lokal — jangan commit)
+**/.keys/
+*.pem

@@ -27,9 +27,11 @@ const EnvSchema = z.object({
   REDIS_CACHE_URL: z.string().optional(),
   REDIS_QUEUE_URL: z.string().optional(),
 
-  // JWT
-  JWT_ACCESS_SECRET: z.string().default('dev-access-secret-change-me'),
-  JWT_REFRESH_SECRET: z.string().default('dev-refresh-secret-change-me'),
+  // JWT — RS256 (asimetris, ADR-005)
+  JWT_PRIVATE_KEY: z.string().optional(),
+  JWT_PUBLIC_KEY: z.string().optional(),
+  JWT_PRIVATE_KEY_PATH: z.string().optional(),
+  JWT_PUBLIC_KEY_PATH: z.string().optional(),
   JWT_ACCESS_TTL: z.string().default('15m'),
   JWT_REFRESH_TTL: z.string().default('7d'),
 

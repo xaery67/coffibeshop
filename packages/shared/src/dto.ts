@@ -90,3 +90,110 @@ export interface PublicConfigDTO {
   sse_heartbeat_interval_ms: number;
   tracking_poll_interval_ms: number;
 }
+
+// ── Auth (PRD-BACKEND §2.1) ──
+/** Password minimal 8 karakter, wajib huruf + angka (PRD-QA TC-SEC). */
+export const PasswordSchema = z
+  .string()
+  .min(8, 'Password minimal 8 karakter')
+  .max(72, 'Password maksimal 72 karakter')
+  .regex(/[A-Za-z]/, 'Password harus memuat huruf')
+  .regex(/[0-9]/, 'Password harus memuat angka');
+
+/** Nomor HP Indonesia: 08xx / +628xx / 628xx. */
+export const PhoneSchema = z
+  .string()
+  .regex(/^(\+?62|0)8[1-9][0-9]{6,11}$/, 'Format nomor HP tidak valid (contoh: 08123456789)');
+
+export const RegisterInput = z.object({
+  email: z.string().email('Format email tidak valid').toLowerCase(),
+  phone: PhoneSchema.optional(),
+  password: PasswordSchema,
+  full_name: z.string().min(2, 'Nama minimal 2 karakter').max(100),
+});
+export type RegisterInput = z.infer<typeof RegisterInput>;
+
+/** Login boleh pakai email ATAU nomor HP. */
+export const LoginInput = z
+  .object({
+    email: z.string().email('Format email tidak valid').toLowerCase().optional(),
+    phone: PhoneSchema.optional(),
+    password: z.string().min(1, 'Password wajib diisi'),
+  })
+  .refine((v) => Boolean(v.email) || Boolean(v.phone), {
+    message: 'Isi email atau nomor HP',
+    path: ['email'],
+  });
+export type LoginInput = z.infer<typeof LoginInput>;
+
+export const RefreshInput = z.object({
+  refresh_token: z.string().min(10, 'refresh_token wajib diisi'),
+});
+export type RefreshInput = z.infer<typeof RefreshInput>;
+
+export const ForgotPasswordInput = z.object({
+  email: z.string().email('Format email tidak valid').toLowerCase(),
+});
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordInput>;
+
+export const ResetPasswordInput = z.object({
+  token: z.string().min(10, 'token wajib diisi'),
+  new_password: PasswordSchema,
+});
+
+/** Ganti password saat sudah login (verifikasi password lama). */
+export const ChangePasswordInput = z.object({
+  current_password: z.string().min(1, 'Password saat ini wajib diisi'),
+  new_password: PasswordSchema,
+});
+export type ResetPasswordInput = z.infer<typeof ResetPasswordInput>;
+
+export const UpdateProfileInput = z.object({
+  full_name: z.string().min(2).max(100).optional(),
+  phone: PhoneSchema.optional(),
+});
+export type UpdateProfileInput = z.infer<typeof UpdateProfileInput>;
+
+/** Peran RBAC (PRD-BACKEND §5) — urut dari paling luas. */
+export const ROLE_HIERARCHY: Record<string, number> = {
+  owner: 100,
+  manager: 80,
+  finance: 70,
+  kasir: 60,
+  barista: 50,
+  member: 10,
+  guest: 0,
+};
+
+/** Role yang punya cakupan outlet tertentu (scope outlet_id wajib). */
+export const OUTLET_SCOPED_ROLES = ['manager', 'kasir', 'barista'] as const;
+
+export interface AuthUserDTO {
+  id: string;
+  email: string;
+  phone: string | null;
+  full_name: string;
+  role: string;
+  outlet_id: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface AuthTokensDTO {
+  access_token: string;
+  refresh_token: string;
+  token_type: 'Bearer';
+  expires_in: number;
+}
+
+export interface AuthResultDTO extends AuthTokensDTO {
+  user: AuthUserDTO;
+  /** true bila cart guest berhasil digabung (ADR-011). */
+  cart_merged: boolean;
+  /** jumlah line item di cart member setelah merge. */
+  cart_item_count: number;
+}
+
+export interface MeDTO extends AuthUserDTO {
+  addresses?: AddressDTO[];
+}
