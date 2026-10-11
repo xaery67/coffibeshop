@@ -66,43 +66,60 @@ model Address {
 
 // ═══════════════ OUTLET ═══════════════
 model Outlet {
-  id         String   @id @default(uuid()) @db.Uuid
-  name       String
-  address    String?
-  phone      String?
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now())
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String
+  code          String   @unique
+  address       String?
+  phone         String?
+  email         String?
+  latitude      Float?
+  longitude     Float?
+  /// Jam operasional per hari: { mon: "08:00-22:00", ... }
+  opening_hours Json     @default("{}")
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
 
-  products Product[]
+  products   Product[]
+  categories Category[]
 
+  @@index([is_active])
   @@map("outlets")
 }
 
 // ═══════════════ CATALOG ═══════════════
 model Category {
-  id         String   @id @default(uuid()) @db.Uuid
-  name       String
-  slug       String   @unique
-  sort_order Int      @default(0)
-  created_at DateTime @default(now())
+  id          String   @id @default(uuid()) @db.Uuid
+  outlet_id   String?  @db.Uuid
+  name        String
+  slug        String   @unique
+  description String?
+  sort_order  Int      @default(0)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
 
+  outlet   Outlet?   @relation(fields: [outlet_id], references: [id], onDelete: SetNull)
   products Product[]
 
+  @@index([outlet_id])
+  @@index([is_active])
   @@map("categories")
 }
 
 model Product {
-  id          String   @id @default(uuid()) @db.Uuid
-  outlet_id   String?  @db.Uuid
-  category_id String   @db.Uuid
-  name        String
-  slug        String?  @unique
-  description String?
-  base_price  Decimal  @db.Decimal(12, 2)
-  image_url   String?
-  is_active   Boolean  @default(true)
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+  id           String   @id @default(uuid()) @db.Uuid
+  outlet_id    String?  @db.Uuid
+  category_id  String   @db.Uuid
+  name         String
+  slug         String?  @unique
+  description  String?
+  base_price   Decimal  @db.Decimal(12, 2)
+  image_url    String?
+  /// Dijual/tampil saat ini (stok/operasional). Terpisah dari is_active (soft delete).
+  is_available Boolean  @default(true)
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
 
   category Category        @relation(fields: [category_id], references: [id])
   outlet   Outlet?         @relation(fields: [outlet_id], references: [id])
@@ -111,16 +128,22 @@ model Product {
   items    OrderItem[]
 
   @@index([category_id])
+  @@index([outlet_id])
   @@index([is_active])
+  @@index([is_available])
   @@map("products")
 }
 
 model ProductVariant {
-  id          String  @id @default(uuid()) @db.Uuid
-  product_id  String  @db.Uuid
-  name        String
-  price_delta Decimal @default(0) @db.Decimal(12, 2)
-  is_active   Boolean @default(true)
+  id             String  @id @default(uuid()) @db.Uuid
+  product_id     String  @db.Uuid
+  name           String
+  sku            String?
+  price_delta    Decimal @default(0) @db.Decimal(12, 2)
+  /// NULL = tak dilacak (unlimited / dilacak lewat BOM inventori).
+  stock_quantity Int?
+  sort_order     Int     @default(0)
+  is_active      Boolean @default(true)
 
   product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
 
@@ -132,13 +155,34 @@ model ProductOption {
   id          String  @id @default(uuid()) @db.Uuid
   product_id  String  @db.Uuid
   name        String
-  price_delta Decimal @default(0) @db.Decimal(12, 2)
+  /// 'single' = radio, 'multiple' = checkbox.
+  option_type String  @default("single")
+  min_select  Int     @default(0)
+  max_select  Int     @default(1)
+  is_required Boolean @default(false)
+  sort_order  Int     @default(0)
   is_active   Boolean @default(true)
 
-  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  values  OptionValue[]
 
   @@index([product_id])
   @@map("product_options")
+}
+
+model OptionValue {
+  id               String  @id @default(uuid()) @db.Uuid
+  option_id        String  @db.Uuid
+  value            String
+  price_adjustment Decimal @default(0) @db.Decimal(12, 2)
+  stock_code       String?
+  sort_order       Int     @default(0)
+  is_active        Boolean @default(true)
+
+  option ProductOption @relation(fields: [option_id], references: [id], onDelete: Cascade)
+
+  @@index([option_id])
+  @@map("option_values")
 }
 
 // ═══════════════ ORDER ═══════════════

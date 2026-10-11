@@ -1,15 +1,193 @@
 import { z } from 'zod';
 import { FulfillmentType, PaymentMethod, OrderStatus } from './enums.js';
 
-// ── Catalog ──
-export interface CategoryDTO { id: string; name: string; slug: string; sort_order: number; }
-export interface VariantDTO { id: string; name: string; price_delta: number; }
-export interface OptionDTO { id: string; name: string; price_delta: number; }
-export interface ProductDTO {
-  id: string; name: string; slug?: string; description: string | null;
-  base_price: number; image_url: string | null; is_active: boolean;
-  category_id: string; variants: VariantDTO[]; options: OptionDTO[];
+/** Password minimal 8 karakter, wajib huruf + angka (PRD-QA TC-SEC). */
+export const PasswordSchema = z
+  .string()
+  .min(8, 'Password minimal 8 karakter')
+  .max(72, 'Password maksimal 72 karakter')
+  .regex(/[A-Za-z]/, 'Password harus memuat huruf')
+  .regex(/[0-9]/, 'Password harus memuat angka');
+
+/** Nomor HP Indonesia: 08xx / +628xx / 628xx. */
+export const PhoneSchema = z
+  .string()
+  .regex(/^(\+?62|0)8[1-9][0-9]{6,11}$/, 'Format nomor HP tidak valid (contoh: 08123456789)');
+
+// ── Catalog (PRD-BACKEND §2.2, database-design §2.4–2.9) ──
+export interface OutletDTO {
+  id: string;
+  name: string;
+  code: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  /** { mon: "08:00-22:00", ... } */
+  opening_hours: Record<string, string>;
+  is_active: boolean;
 }
+
+export interface CategoryDTO {
+  id: string;
+  outlet_id: string | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  sort_order: number;
+  is_active: boolean;
+  /** Jumlah produk aktif di kategori ini (untuk badge — TC-F001-02). */
+  product_count?: number;
+}
+
+export interface VariantDTO {
+  id: string;
+  name: string;
+  sku: string | null;
+  price_delta: number;
+  /** null = tidak dilacak (unlimited/BOM). */
+  stock_quantity: number | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface OptionValueDTO {
+  id: string;
+  value: string;
+  price_adjustment: number;
+  stock_code: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface OptionDTO {
+  id: string;
+  name: string;
+  /** 'single' = radio, 'multiple' = checkbox. */
+  option_type: string;
+  min_select: number;
+  max_select: number;
+  is_required: boolean;
+  sort_order: number;
+  is_active: boolean;
+  values: OptionValueDTO[];
+}
+
+export interface ProductDTO {
+  id: string;
+  outlet_id: string | null;
+  name: string;
+  slug: string | null;
+  description: string | null;
+  base_price: number;
+  image_url: string | null;
+  is_available: boolean;
+  is_active: boolean;
+  category_id: string;
+  category?: Pick<CategoryDTO, 'id' | 'name' | 'slug'>;
+  variants: VariantDTO[];
+  options: OptionDTO[];
+}
+
+/** Parse query boolean dari string URL ('true'/'1' → true, 'false'/'0' → false). */
+const queryBool = z
+  .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+  .transform((v) => v === true || v === 'true' || v === '1');
+
+/** Query GET /catalog/products — PRD-BACKEND §2.2. */
+export const ProductQuery = z.object({
+  outlet_id: z.string().uuid().optional(),
+  category_id: z.string().uuid().optional(),
+  q: z.string().trim().max(100).optional(),
+  available: queryBool.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+export type ProductQuery = z.infer<typeof ProductQuery>;
+
+/** Query GET /catalog/outlets — cari outlet terdekat (PRD-BACKEND §2.2). */
+export const OutletQuery = z.object({
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  radius: z.coerce.number().positive().max(100).optional(),
+});
+export type OutletQuery = z.infer<typeof OutletQuery>;
+
+// ── Admin CRUD (PRD-BACKEND §2.2, RBAC owner/manager) ──
+const OpeningHoursSchema = z.record(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/));
+
+export const OutletInput = z.object({
+  name: z.string().min(2).max(100),
+  code: z.string().min(2).max(20).regex(/^[A-Z0-9-]+$/, 'Kode hanya huruf besar, angka, dan tanda hubung'),
+  address: z.string().max(300).optional(),
+  phone: PhoneSchema.optional(),
+  email: z.string().email().optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  opening_hours: OpeningHoursSchema.optional(),
+  is_active: z.boolean().optional(),
+});
+export type OutletInput = z.infer<typeof OutletInput>;
+
+export const CategoryInput = z.object({
+  name: z.string().min(2, 'Nama minimal 2 karakter').max(100),
+  slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, 'Slug hanya huruf kecil, angka, tanda hubung').optional(),
+  description: z.string().max(300).optional(),
+  outlet_id: z.string().uuid().nullish(),
+  sort_order: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+});
+export type CategoryInput = z.infer<typeof CategoryInput>;
+export const CategoryUpdateInput = CategoryInput.partial();
+export type CategoryUpdateInput = z.infer<typeof CategoryUpdateInput>;
+
+export const ProductInput = z.object({
+  name: z.string().min(2, 'Nama minimal 2 karakter').max(150),
+  slug: z.string().min(2).max(150).optional(),
+  description: z.string().max(1000).optional(),
+  base_price: z.number().int().min(0, 'Harga tidak boleh negatif'),
+  category_id: z.string().uuid('category_id harus UUID'),
+  outlet_id: z.string().uuid().nullish(),
+  image_url: z.string().url().optional(),
+  is_available: z.boolean().optional(),
+  is_active: z.boolean().optional(),
+});
+export type ProductInput = z.infer<typeof ProductInput>;
+export const ProductUpdateInput = ProductInput.partial();
+export type ProductUpdateInput = z.infer<typeof ProductUpdateInput>;
+
+export const VariantInput = z.object({
+  name: z.string().min(1).max(50),
+  sku: z.string().max(50).optional(),
+  price_delta: z.number().int().default(0),
+  stock_quantity: z.number().int().min(0).nullish(),
+  sort_order: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+});
+export type VariantInput = z.infer<typeof VariantInput>;
+
+export const OptionValueInput = z.object({
+  value: z.string().min(1).max(50),
+  price_adjustment: z.number().int().default(0),
+  stock_code: z.string().max(50).optional(),
+  is_default: z.boolean().optional(),
+  sort_order: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+});
+export type OptionValueInput = z.infer<typeof OptionValueInput>;
+
+export const OptionInput = z.object({
+  name: z.string().min(1).max(50),
+  option_type: z.enum(['single', 'multiple']).default('single'),
+  min_select: z.number().int().min(0).default(0),
+  max_select: z.number().int().min(1).default(1),
+  is_required: z.boolean().default(false),
+  sort_order: z.number().int().min(0).optional(),
+  is_active: z.boolean().optional(),
+  values: z.array(OptionValueInput).max(30).optional(),
+});
+export type OptionInput = z.infer<typeof OptionInput>;
 
 // ── Cart ──
 export const CartItemInput = z.object({
@@ -92,18 +270,6 @@ export interface PublicConfigDTO {
 }
 
 // ── Auth (PRD-BACKEND §2.1) ──
-/** Password minimal 8 karakter, wajib huruf + angka (PRD-QA TC-SEC). */
-export const PasswordSchema = z
-  .string()
-  .min(8, 'Password minimal 8 karakter')
-  .max(72, 'Password maksimal 72 karakter')
-  .regex(/[A-Za-z]/, 'Password harus memuat huruf')
-  .regex(/[0-9]/, 'Password harus memuat angka');
-
-/** Nomor HP Indonesia: 08xx / +628xx / 628xx. */
-export const PhoneSchema = z
-  .string()
-  .regex(/^(\+?62|0)8[1-9][0-9]{6,11}$/, 'Format nomor HP tidak valid (contoh: 08123456789)');
 
 export const RegisterInput = z.object({
   email: z.string().email('Format email tidak valid').toLowerCase(),
