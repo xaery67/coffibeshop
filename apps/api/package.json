@@ -22,7 +22,7 @@
     "@coffibeshop/shared": "*",
     "@prisma/client": "^5.22.0",
     "@supabase/supabase-js": "^2.117.3",
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "bullmq": "^5.28.1",
     "compression": "^1.7.5",
     "cors": "^2.8.5",
@@ -38,7 +38,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
