@@ -39,7 +39,24 @@ npm run -w @coffibeshop/api prisma:seed
 
 Akun seed: `owner@coffibeshop.id`
 
+### 2.1 Bagaimana `.env` sampai ke container
+
+`.env` **tidak dibake ke image** (diblokir `.dockerignore`) dan **bukan** di-`env_file` mentah.
+Variabel diteruskan **satu per satu** lewat substitusi `${VAR}` di `docker-compose.yml`,
+mis. `MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}` — nilainya dibaca dari `.env` saat
+`docker compose up`.
+
+> **Kenapa tidak `env_file: - .env`?** Karena `.env` memuat placeholder Supabase/Upstash
+> (`<project-ref>`, dst). Bila diteruskan mentah, `apps/api/src/config/env.ts` akan
+> **gagal boot** (`❌ Invalid environment variables: { SUPABASE_URL: ['Invalid url'] }`).
+> Jadi hanya variabel yang **sudah nyata** yang diteruskan; tambahkan baris pass-through
+> baru begitu kredensial Supabase/Upstash benar-benar diisi.
+
+Untuk meneruskan variabel baru: tambahkan `${NAMA_VAR:-default}` di blok `environment:`
+service `api`, lalu `docker compose up -d --build api`.
+
 ---
+
 
 ## 3. Konfigurasi Supabase (produksi / staging)
 
@@ -82,7 +99,10 @@ SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 REDIS_CACHE_URL=rediss://default:<PASSWORD>@<host>.upstash.io:6379
 REDIS_QUEUE_URL=rediss://default:<PASSWORD>@<host>.upstash.io:6379
 JWT_PRIVATE_KEY=<PEM RS256 — atau biarkan kosong & pakai .keys/ lokal>
-JWT_REFRESH_SECRET=<random-64-char>
+JWT_PUBLIC_KEY=<PEM RS256 publik — pasangan JWT_PRIVATE_KEY>
+MIDTRANS_SERVER_KEY=<midtrans-server-key>
+MIDTRANS_CLIENT_KEY=<midtrans-client-key>
+MIDTRANS_IS_PRODUCTION=false
 ```
 
 > **Penting — Prisma + Supavisor:** `DATABASE_URL` (port 6543, pgbouncer)
@@ -119,8 +139,8 @@ Lihat `.env.example` di root. Kelompok:
 - **Core**: `NODE_ENV`, `API_PORT`, `API_BASE_URL`, `CORS_ORIGIN`
 - **Database**: `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`
 - **Redis**: `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`
-- **Auth**: `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` (RS256, PEM inline) atau `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`
-- **Payment**: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `XENDIT_SECRET_KEY`, `PAYMENT_WEBHOOK_SECRET`
+- **Auth**: `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` (RS256, PEM inline) atau `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`
+- **Payment**: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `MIDTRANS_IS_PRODUCTION`, `XENDIT_SECRET_KEY`, `XENDIT_CALLBACK_TOKEN`
 - **Notification**: `FCM_SERVER_KEY`, `TWILIO_*`, `SENDGRID_API_KEY`
 - **Realtime**: `SSE_MAX_CONNECTIONS_PER_POD`, `WS_MAX_CONNECTIONS_PER_POD`, `TRACKING_POLL_INTERVAL_MS`
 - **Frontend** (hanya `VITE_*`): `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
