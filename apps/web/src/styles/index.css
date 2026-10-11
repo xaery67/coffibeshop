@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-brand: #6f4e37;
+  --color-brand-fg: #ffffff;
+  --color-focus: #2563eb;
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body { font-family: Inter, system-ui, sans-serif; }
+input, select, textarea { font-size: 16px; } /* cegah zoom di iOS */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Fokus terlihat (WCAG 2.1 AA) */
+:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

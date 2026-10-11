@@ -1,0 +1,286 @@
+// CoffeeShop Online — Prisma schema
+// Database: PostgreSQL via Supabase (ADR-002)
+// Jalankan: npm run db:generate && npm run db:migrate:dev
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ═══════════════ AUTH & USER ═══════════════
+enum Role {
+  owner
+  manager
+  kasir
+  barista
+  finance
+  guest
+  member
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique
+  phone         String?
+  full_name     String
+  password_hash String
+  role          Role      @default(member)
+  outlet_id     String?   @db.Uuid
+  is_active     Boolean   @default(true)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  addresses Address[]
+  orders    Order[]
+  points    LoyaltyPoint[]
+
+  @@map("users")
+}
+
+model Address {
+  id             String   @id @default(uuid()) @db.Uuid
+  user_id        String   @db.Uuid
+  label          String
+  recipient_name String
+  phone          String
+  address_line   String
+  city           String
+  postal_code    String
+  latitude       Float?
+  longitude      Float?
+  is_default     Boolean  @default(false)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("addresses")
+}
+
+// ═══════════════ OUTLET ═══════════════
+model Outlet {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  address    String?
+  phone      String?
+  is_active  Boolean  @default(true)
+  created_at DateTime @default(now())
+
+  products Product[]
+
+  @@map("outlets")
+}
+
+// ═══════════════ CATALOG ═══════════════
+model Category {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  slug       String   @unique
+  sort_order Int      @default(0)
+  created_at DateTime @default(now())
+
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id          String   @id @default(uuid()) @db.Uuid
+  outlet_id   String?  @db.Uuid
+  category_id String   @db.Uuid
+  name        String
+  slug        String?  @unique
+  description String?
+  base_price  Decimal  @db.Decimal(12, 2)
+  image_url   String?
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  category Category        @relation(fields: [category_id], references: [id])
+  outlet   Outlet?         @relation(fields: [outlet_id], references: [id])
+  variants ProductVariant[]
+  options  ProductOption[]
+  items    OrderItem[]
+
+  @@index([category_id])
+  @@index([is_active])
+  @@map("products")
+}
+
+model ProductVariant {
+  id          String  @id @default(uuid()) @db.Uuid
+  product_id  String  @db.Uuid
+  name        String
+  price_delta Decimal @default(0) @db.Decimal(12, 2)
+  is_active   Boolean @default(true)
+
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@map("product_variants")
+}
+
+model ProductOption {
+  id          String  @id @default(uuid()) @db.Uuid
+  product_id  String  @db.Uuid
+  name        String
+  price_delta Decimal @default(0) @db.Decimal(12, 2)
+  is_active   Boolean @default(true)
+
+  product Product @relation(fields: [product_id], references: [id], onDelete: Cascade)
+
+  @@index([product_id])
+  @@map("product_options")
+}
+
+// ═══════════════ ORDER ═══════════════
+enum OrderStatus {
+  PENDING
+  PAID
+  CONFIRMED
+  BEING_PREPARED
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum FulfillmentType {
+  pickup
+  delivery
+  dine_in
+}
+
+model Order {
+  id                  String          @id @default(uuid()) @db.Uuid
+  order_number        String          @unique
+  user_id             String?         @db.Uuid
+  outlet_id           String?         @db.Uuid
+  status              OrderStatus     @default(PENDING)
+  subtotal            Decimal         @db.Decimal(12, 2)
+  tax                 Decimal         @db.Decimal(12, 2)
+  shipping_fee        Decimal         @default(0) @db.Decimal(12, 2)
+  discount            Decimal         @default(0) @db.Decimal(12, 2)
+  total               Decimal         @db.Decimal(12, 2)
+  fulfillment_type    FulfillmentType @default(pickup)
+  payment_method      String?
+  tracking_token      String?         @unique
+  address_snapshot    Json?
+  cancel_reason       String?
+  notes               String?
+  estimated_ready_time DateTime?
+  created_at          DateTime        @default(now())
+  updated_at          DateTime        @updatedAt
+
+  user   User?       @relation(fields: [user_id], references: [id])
+  items  OrderItem[]
+  logs   OrderStatusLog[]
+
+  @@index([user_id])
+  @@index([status])
+  @@index([tracking_token])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(uuid()) @db.Uuid
+  order_id   String  @db.Uuid
+  product_id String  @db.Uuid
+  variant_id String? @db.Uuid
+  qty        Int
+  unit_price Decimal @db.Decimal(12, 2)
+  line_total Decimal @db.Decimal(12, 2)
+  options    Json?
+  notes      String?
+
+  order   Order   @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@index([order_id])
+  @@map("order_items")
+}
+
+model OrderStatusLog {
+  id         String      @id @default(uuid()) @db.Uuid
+  order_id   String      @db.Uuid
+  from_status OrderStatus?
+  to_status  OrderStatus
+  changed_by String?     @db.Uuid
+  note       String?
+  created_at DateTime    @default(now())
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+
+  @@index([order_id])
+  @@map("order_status_logs")
+}
+
+// ═══════════════ PAYMENT ═══════════════
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  expired
+  refunded
+}
+
+model Payment {
+  id             String        @id @default(uuid()) @db.Uuid
+  order_id       String        @db.Uuid
+  provider       String
+  method         String
+  amount         Decimal       @db.Decimal(12, 2)
+  status         PaymentStatus @default(pending)
+  transaction_id String?       @unique
+  paid_at        DateTime?
+  created_at     DateTime      @default(now())
+
+  @@index([order_id])
+  @@map("payments")
+}
+
+// ═══════════════ LOYALTY & VOUCHER ═══════════════
+model LoyaltyPoint {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  points     Int
+  type       String
+  order_id   String?  @db.Uuid
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("loyalty_points")
+}
+
+model Voucher {
+  id              String    @id @default(uuid()) @db.Uuid
+  code            String    @unique
+  discount_amount Decimal   @default(0) @db.Decimal(12, 2)
+  min_purchase    Decimal   @default(0) @db.Decimal(12, 2)
+  is_active       Boolean   @default(true)
+  expires_at      DateTime?
+  created_at      DateTime  @default(now())
+
+  @@map("vouchers")
+}
+
+// ═══════════════ INVENTORY ═══════════════
+model InventoryItem {
+  id         String   @id @default(uuid()) @db.Uuid
+  outlet_id  String?  @db.Uuid
+  name       String
+  unit       String
+  quantity   Decimal  @default(0) @db.Decimal(12, 3)
+  min_stock  Decimal  @default(0) @db.Decimal(12, 3)
+  updated_at DateTime @updatedAt
+
+  @@map("inventory_items")
+}

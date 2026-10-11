@@ -1,0 +1,46 @@
+name: CD - Staging
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        if: ${{ secrets.REGISTRY_USERNAME != '' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_URL }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push API
+        if: ${{ secrets.REGISTRY_USERNAME != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: ${{ secrets.REGISTRY_URL }}/coffibeshop-api:${{ github.sha }}
+
+      - name: Build and push Web
+        if: ${{ secrets.REGISTRY_USERNAME != '' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: ${{ secrets.REGISTRY_URL }}/coffibeshop-web:${{ github.sha }}
+
+      - name: Deploy placeholder
+        run: |
+          echo "TODO - kubectl set image / helm upgrade"
+          echo "Lihat docs/PRD-BACKEND-DEVOPS.md section 3"

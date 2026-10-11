@@ -1,0 +1,42 @@
+name: 🐛 Bug Report
+description: Laporkan bug atau perilaku tak terduga
+title: "[BUG] "
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: desc
+    attributes:
+      label: Deskripsi bug
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Langkah reproduksi
+      placeholder: "1. …\n2. …\n3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Perilaku diharapkan
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Perilaku aktual
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS, browser, versi commit/tag"
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options: [Critical, High, Medium, Low]
+    validations:
+      required: true

@@ -1,0 +1,56 @@
+name: ✨ Feature Request
+description: Usulkan fitur baru atau peningkatan
+title: "[FEAT] "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Terima kasih! Isi detail di bawah agar mudah diprioritaskan.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Masalah / kebutuhan
+      description: Fitur ini menyelesaikan masalah apa?
+      placeholder: "Sebagai <peran>, saya ingin <aksi>, agar <manfaat>."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Usulan solusi
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend (API)
+        - Frontend (Customer PWA)
+        - Frontend (Admin)
+        - Database
+        - DevOps / Infra
+        - Docs
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Prioritas
+      options:
+        - P0 — Blocker
+        - P1 — Tinggi
+        - P2 — Sedang
+        - P3 — Rendah
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: "- [ ] …\n- [ ] …"
+  - type: textarea
+    id: context
+    attributes:
+      label: Konteks tambahan / referensi PRD

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📚 Dokumentasi PRD
+    url: https://github.com/xaery67/coffibeshop/tree/main/docs
+    about: Baca PRD Backend/Frontend/UX/QA/DevOps sebelum membuka issue.

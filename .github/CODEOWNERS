@@ -1,0 +1,17 @@
+# Default owners — sesuaikan dengan tim Anda
+*                       @xaery67
+
+# Backend
+/apps/api/              @xaery67
+/packages/shared/       @xaery67
+
+# Frontend
+/apps/web/              @xaery67
+
+# Infra & CI
+/docker-compose.yml     @xaery67
+/.github/               @xaery67
+/apps/*/Dockerfile      @xaery67
+
+# Docs
+/docs/                  @xaery67
