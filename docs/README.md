@@ -10,12 +10,12 @@ Kumpulan dokumen perencanaan & teknis proyek **coffibeshop**.
 | [`PRD-QA.md`](./PRD-QA.md) | QA v1.3 — 138 test case, AC, traceability, gate rilis |
 | [`PRD-BACKEND-DEVOPS.md`](./PRD-BACKEND-DEVOPS.md) | DevOps v1.1 — infra, CI/CD, observability, SSE/WS ops |
 | [`ARCHITECTURE.md`](./ARCHITECTURE.md) | Ringkasan arsitektur sistem |
-| [`SPRINT-PLAN.md`](./SPRINT-PLAN.md) | Rencana sprint MVP (Sprint 1–4) |
+| [`SPRINT-PLAN.md`](./SPRINT-PLAN.md) | **Sprint Planning MVP v1.0** — 4 sprint, SP, DoD, jalur kritis, traceability |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Panduan kontribusi & alur kerja Git |
 | [`../diagrams/`](./diagrams) | Use case, class, ERD, DFD, process flow, system architecture |
 
 ## Status Proyek
 
-- **Fase:** Inisialisasi → Sprint 1
+- **Fase:** Sprint 1 — Fondasi & Katalog (aktif)
 - **Versi:** v0.1.0 (MVP scaffolding)
 - **Stack:** React PWA + Node/TS API + Supabase + Upstash Redis
