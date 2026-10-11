@@ -1,8 +1,9 @@
 # PRD-FRONTEND-UX — CoffeeShop Online
 
 > **Peran dokumen:** SUPPORT untuk `PRD-FRONTEND.md` (LEAD: Frontend Engineer).
-> **Penulis:** UI/UX Designer. **Status:** Draft untuk review PO & Frontend Engineer.
+> **Penulis:** UI/UX Designer. **Versi:** v1.1 · **Status:** Disinkronkan dengan design system (12 Okt 2026).
 > **Sumber:** `README.md`, `prd-planning-coffeeshop.md` (§3 Analisis UX, §4 Persona/User Journey), `diagrams/use-case-diagram.md`, `diagrams/process-flow-diagram.md`, `ux-research-findings.md`.
+> **Sumber kebenaran terkait:** **token & komponen → `docs/DESIGN-SYSTEM.md`** (di-merge PR #43, `d34e2737`) · **wireframe layar → `docs/UX-FLOWS.md`** · **temuan kepatuhan → `docs/UI-AUDIT.md`** (PR #44, `10e04c00`).
 > **Alignment:** Component Tree & route pada `PRD-FRONTEND.md` §2 (route, nama komponen, dan status order memakai penamaan yang sama).
 
 ---
@@ -194,6 +195,7 @@ Login (RBAC)
 - **EmptyCartState** + CTA "Lihat Menu".
 - Cart tersimpan saat user keluar app (F-003, AC-04).
 - **Fulfillment = satu selector 4 tipe** (best practice §3.3). Mode **Delivery** menampilkan `DeliveryAddressCard` (dari `AddressBook`) + ongkir/estimasi dari server; mode Pickup/Dine-in/Takeaway menampilkan `OutletPickupInfo`. Ongkir hanya muncul sebagai baris `CartSummary` saat mode Delivery (default `Rp 0`).
+- **⚠️ Tindak lanjut audit (`UI-AUDIT.md` #44):** `CheckoutCTA` di kode **mati** (tanpa navigasi) → temuan **T1** (wajib dibetulkan di #11); selector fulfillment belum punya `role="radiogroup"` → **M4**; spacing `py-2.5`(10px) bukan 4pt → **M3**; `<Link><Button>` "Lihat Menu" → **T5**. Semua ini **temuan kode**, bukan perubahan desain.
 
 ### 2.5 Checkout (≤ 5 langkah)
 ```
@@ -219,6 +221,7 @@ Login (RBAC)
 - **Guest Checkout paling menonjol** (best practice §3.3; 62% situs salah).
 - Required/optional ditandai teks + atribut (bukan warna saja).
 - **Step2 (Waktu/Outlet)** adaptif: mode Pickup/Dine-in/Takeaway → pilih outlet + ASAP/jadwal; mode **Delivery** → pilih/isi `DeliveryAddressCard` + estimasi ongkir. Field alamat muncul **hanya** untuk Delivery (tidak menambah langkah → tetap ≤ 5).
+- **⚠️ Tindak lanjut audit (`UI-AUDIT.md` #44):** `GuestCheckoutButton` sebagai tombol primer sudah sesuai; tapi pola `<Link><Button>` (**T5**) dan tipografi default (`text-2xl/xl` alih-alih token `text-h1` dkk, **M2**) perlu dibetulkan saat #11. `CheckoutStepper` "Langkah 3 dari 5" wajib `aria-live`/`aria-current` saat berpindah step.
 
 ### 2.6 Payment
 ```
@@ -289,74 +292,88 @@ Login (RBAC)
 
 ---
 
-## 3. Design System Tokens
+## 3. Design System Tokens — **RUJUKAN (bukan sumber kebenaran)**
 
-Diekspor sebagai **CSS variables + Tailwind preset** (`packages/ui`), dipakai bersama Customer & Admin (PRD-FRONTEND §6.1). Nilai di bawah adalah **usulan awal** untuk disepakati (dependensi "token visual final" di PRD-FRONTEND §9).
+> ⚠️ **Perubahan penting (12 Okt 2026):** §3 dokumen ini **DULU** mendefinisikan token sendiri → risiko **dua sumber kebenaran** dengan `DESIGN-SYSTEM.md` yang bikin #11 salah. Sekarang **sumber kebenaran token & komponen = `docs/DESIGN-SYSTEM.md`** (di-merge PR #43, `d34e2737`). Bagian di bawah hanya **ringkasan + daftar selisih** yang wajib dibaca FE sebelum implementasi.
+>
+> **Aturan:** bila ada konflik antara dokumen ini dan `DESIGN-SYSTEM.md` → **`DESIGN-SYSTEM.md` menang**. Selisih di bawah sudah **diperbaiki** di dokumen ini (v1.1).
 
 ### 3.1 Warna
-| Token | Nilai | Pemakaian |
-|---|---|---|
-| `--color-primary` | `#6F4E37` (Coffee Brown) | CTA utama, brand |
-| `--color-primary-hover` | `#5A3E2B` | hover/pressed |
-| `--color-secondary` | `#C8A27A` (Latte) | aksen, badge lembut |
-| `--color-accent` | `#E8B44F` (Caramel) | highlight promo |
-| `--color-bg` | `#FFFFFF` | latar utama |
-| `--color-bg-subtle` | `#F7F4F0` (Cream) | section alt, card |
-| `--color-text` | `#1F1B16` | teks utama (kontras ≥ 4.5:1) |
-| `--color-text-muted` | `#6B6257` | teks sekunder |
-| `--color-border` | `#E5DED6` | garis, divider |
-| `--color-success` | `#2E7D32` | status PAID/COMPLETED, sukses (fill) |
-| `--color-warning` | `#ED8B00` | low-stock, pending (**fill saja**) |
-| `--color-error` | `#C62828` | gagal bayar, cancel (fill) |
-| `--color-info` | `#1565C0` | info netral (fill) |
 
-**Kontras (hasil hitung WCAG dari review implementasi FE — WAJIB):**
-- ❌ `--color-warning #ED8B00` = **2.53:1** — gagal sebagai teks (≥ 4.5:1) maupun elemen UI (≥ 3:1).
-- ❌ `--color-secondary #C8A27A` = **2.36:1** — gagal.
-- ❌ `--color-accent #E8B44F` = **1.90:1** — gagal.
-- Ketiganya **hanya boleh jadi latar/fill**, bukan warna teks. Untuk pemakaian teks, sediakan varian gelap: `--color-warning-fg #8A4B00` (**6.80:1** ✔) + turunan gelap untuk `secondary`/`accent`.
-- **Pasangan `-fg` eksplisit** untuk setiap token yang dipakai sebagai latar (`--color-primary-fg`, `--color-success-fg`, `--color-error-fg`, `--color-info-fg`, …) — mencegah teks gelap di atas latar gelap.
-- ✔ Lolos & aman: `--color-primary #6F4E37` (teks putih) = **7.44:1**; `--color-text-muted #6B6257` = **5.98:1**; `success`, `error`, `info`, `text` juga lolos.
-- **`--color-focus`** (mis. `#1565C0`) + focus ring `2px solid`, `outline-offset: 2px`, `:focus-visible` — wajib untuk navigasi keyboard (WCAG 2.4.7), kontras ring ≥ 3:1 dan tidak terpotong.
+**Sumber kebenaran:** `DESIGN-SYSTEM.md` §1.1 (palet lengkap + CSS variable) & §1.2 (hasil uji kontras).
 
-> Semua pasangan teks/latar diuji ≥ **4.5:1** (teks) dan ≥ **3:1** (elemen UI). Status **tidak boleh** hanya dibedakan warna — selalu + ikon/label (WCAG AA).
+Palet inti (sama dengan DS): `brand #6F4E37` · `brand-hover/-600 #5A3E2B` · `brand-700 #493326` · `brand-100 #EDE3DA` · `brand-50 #F7F4F0` · `secondary #C8A27A` · `accent #E8B44F` · `success #2E7D32` · `warning #ED8B00` · `warning-fg #8A4B00` · `error #C62828` · `info/focus #1565C0` · `text #1F1B16` · `text-muted #6B6257` · `border #E5DED6` · `bg #FFFFFF`.
+
+**Aturan kontras (dari DS §1.2, WAJIB):**
+- ❌ **fill-only** (gagal kontras): `warning #ED8B00` (**2.53:1**), `secondary #C8A27A` (**2.36:1**), `accent #E8B44F` (**1.90:1**) — **jangan** dipakai sebagai warna teks/ikon tunggal.
+- ✔ Lolos: `brand #6F4E37` (**7.44:1**), `text-muted #6B6257` (**5.98:1**), `success #2E7D32` (**5.13:1**), `error #C62828` (**5.62:1**), `info/focus #1565C0` (**5.75:1**), `warning-fg #8A4B00` (**6.80:1**).
+- **Pasangan `-fg` wajib** untuk setiap latar: `brand-fg`/`secondary-fg`/`accent-fg`/`success-fg`/`warning-fg`/`error-fg`/`info-fg` (DS §1.1). `--color-focus` + ring `2px`, `outline-offset: 2px`, `:focus-visible`.
+
+**Selisih vs versi lama §3.1 (sudah diperbaiki):** tabel lama **tidak** memuat `brand-700 #493326`, `brand-100 #EDE3DA`, dan **semua pasangan `-fg`** (`secondary-fg`/`accent-fg #3A2A18`, dll.) serta `--color-focus` — hanya disebut di prosa. Kini didelegasikan ke DS §1.1.
 
 ### 3.2 Tipografi
-- **Font:** `Inter` (UI) + `Plus Jakarta Sans` (display/heading opsional). Fallback sistem.
-- **Skala mobile** (rem, base 16px):
 
-| Token | Size / Line-height | Pemakaian |
-|---|---|---|
-| `text-display` | 28/34 · 700 | Judul hero |
-| `text-h1` | 24/30 · 700 | Judul layar |
-| `text-h2` | 20/26 · 600 | Section |
-| `text-h3` | 16/22 · 600 | Judul kartu |
-| `text-body` | 14/20 · 400 | Teks utama |
-| `text-sm` | 12/16 · 400 | Meta, caption |
-| `text-price` | 16/20 · 700 (tabular) | Harga (angka rata) |
+**Sumber kebenaran:** `DESIGN-SYSTEM.md` §2. Font: `Inter`, base 16px.
 
-> **Wajib (review FE):** `text-price` memakai `font-variant-numeric: tabular-nums` agar angka harga rata & tidak "goyang". **Ukuran font input ≥ 16px** di mobile untuk mencegah auto-zoom iOS Safari saat fokus.
+| Token DS | Size / LH | Weight | Pemakaian |
+|---|---|---|---|
+| `text-display` | 28/34 | 700 | Judul hero |
+| `text-h1` | 24/30 | 700 | Judul layar |
+| `text-h2` | 20/26 | 600 | Section |
+| `text-h3` | 16/22 | 600 | Judul kartu |
+| `text-body` | 14/20 | 400 | Teks isi (default) |
+| `text-sm` | 14/20 | 400 | Teks kecil (Tailwind default) |
+| `text-caption` | 12/16 | 400 | Caption, disclaimer |
+| `text-price` | 16/20 | 700 · tabular-nums | Harga |
+
+> **⚠️ Selisih token (DIPERBAIKI):** versi lama §3.2 menulis **`text-sm = 12/16`**. Itu **salah** — `text-sm` di DS = **14/20**; yang 12/16 adalah **`text-caption`**. Versi lama **tidak punya** `text-caption` sama sekali. Jika FE memakai `text-sm` mengharap 12px, teks akan 14px. **Pakai `text-caption` untuk 12/16.**
+> **Wajib:** semua harga `tabular-nums` (`text-price`); **font input ≥ 16px** (cegah auto-zoom iOS).
 
 ### 3.3 Spacing (skala 4pt)
-`space-1=4 · space-2=8 · space-3=12 · space-4=16 · space-5=20 · space-6=24 · space-8=32 · space-10=40`
-- Padding layar: **16px**. Gap antar kartu: **12px**. Section vertikal: **24–32px**.
 
-### 3.4 Radius, Elevation, Motion
-- **Radius:** `sm=8 · md=12 · lg=16 · pill=999` (badge/chip). Tombol & card = `md`.
-- **Shadow:** `elev-1` (card) `0 1px 2px rgba(0,0,0,.06)`; `elev-2` (bottom sheet/sticky) `0 -4px 16px rgba(0,0,0,.10)`.
-- **Motion:** durasi `fast=150ms · base=250ms`; easing `standard`. Hormati `prefers-reduced-motion`.
+**Sumber kebenaran:** `DESIGN-SYSTEM.md` §3. `space-1=4 · 2=8 · 3=12 · 4=16 · 5=20 · 6=24 · 8=32 · 10=40 · 12=48 · 16=64`.
+Aturan layout: padding layar **16px**; gap grid produk **12px**; jarak section **24–32px**.
+
+> **Selisih (DIPERBAIKI):** versi lama berhenti di `space-10=40`; DS menambah **`space-12=48`** & **`space-16=64`**. Nilai `.5` (mis. `py-2.5`=10px) **tidak** kelipatan 4pt → dihindari (temuan audit **M3**).
+
+### 3.4 Radius, Shadow, Elevasi, Motion
+
+**Sumber kebenaran:** `DESIGN-SYSTEM.md` §4 & §6.
+
+| Token DS | Nilai | Pemakaian |
+|---|---|---|
+| `rounded-sm` | 8px | chip kecil, badge |
+| `rounded-lg` | **8px** | **tombol**, input |
+| `rounded-card` | **12px** | kartu, panel, sheet item |
+| `rounded-xl` | 16px | modal besar |
+| `rounded-pill` | 999px | badge, chip filter |
+
+`shadow-elev1` `0 1px 2px rgba(0,0,0,.06)` (kartu) · `shadow-elev2` `0 -4px 16px rgba(0,0,0,.10)` (sheet/sticky) · `shadow-hover` `0 4px 16px rgba(0,0,0,.08)` (kartu interaktif).
+Elevasi z: konten `0` → sticky/header `10` → sheet/overlay `50` → toast `60`. Motion: `fast 150ms` · `base 250ms`; hormati `prefers-reduced-motion`.
+
+> **⚠️ Selisih radius (DIPERBAIKI):** versi lama menulis **"Tombol & card = `md` (12px)"**. **Salah untuk tombol** — DS §4 menetapkan **tombol = `rounded-lg` (8px)**, sedangkan **kartu = `rounded-card` (12px)**. (Ini juga yang saya koreksi di audit §6: kode `Button` sudah benar 8px.) Selain itu nama token lama (`sm/md/lg`) berbeda dari DS (`rounded-sm/rounded-lg/rounded-card/rounded-xl`); versi lama juga **tak menyebut `shadow-hover`**.
 
 ### 3.5 Komponen Inti
-| Komponen | Varian / State | Catatan |
-|---|---|---|
-| **Button** | primary · secondary · ghost · danger; sm/md/lg; loading · disabled | Tinggi ≥ 44px (touch target). Aksi primer 1 per layar. |
-| **Card** | product · order · kpi; default/hover/selected | Radius md, elev-1, gambar rasio 1:1 / 4:3. |
-| **BottomSheet** | filter · kustomisasi · cart item | Radix Dialog + Framer Motion; drag-to-close, focus-trap, `Esc`. |
-| **Stepper** | checkout (5 langkah) · qty inline | Checkout: progress indicator + label langkah. Qty: tombol −/+ inline, **tanpa "Apply"**. |
-| **Badge** | best seller · promo · status (success/warning/error/info) | Status pakai ikon + teks, bukan warna saja. |
-| **Chip** | option value (label + Δharga), filter, kategori | Selected state jelas (border + check). |
-| **Toast** | success · error · info | `aria-live=polite`; posisi atas/bawah tidak menutup CTA. |
-| **Skeleton** | product card · list · kpi | Cegah layout shift (CLS). |
+
+**Sumber kebenaran:** `DESIGN-SYSTEM.md` §5 (komponen dasar, lengkap dengan API & state) & §8 (handoff API + contoh Tailwind). Komponen yang **sudah ada** (`✅`) vs **perlu dibuat** (`🆕`) ada di DS §5/§8.1.
+
+> **⚠️ Selisih (DIPERBAIKI):** versi lama §3.5 menyebut **"Button — Tinggi ≥ 44px"**. DS §5.1 menetapkan **`sm`=36px** (aksi sekunder padat), **`md`=44px**, `lg`=48px. Jadi klaim "semua tombol ≥44px" **tidak akurat** — `sm` memang 36px dan itu sah (DS §7.2). Komponen **`Chip`** di tabel lama kini jadi **`OptionChipGroup`** (DS §5.14) + `SegmentedControl`/chip reusable (temuan audit **M6**).
+
+### 3.6 Ringkasan Selisih Token (lama §3 → `DESIGN-SYSTEM.md`)
+
+| # | Item | Nilai lama (PRD §3) | Nilai benar (`DESIGN-SYSTEM.md`) | Tingkat | Status |
+|---|---|---|---|---|---|
+| D1 | `text-sm` | 12/16 | **14/20** (12/16 = `text-caption`) | 🔴 tinggi | ✅ diperbaiki |
+| D2 | Radius tombol | "tombol = md (12px)" | **tombol = `rounded-lg` 8px** | 🔴 tinggi | ✅ diperbaiki |
+| D3 | Token `text-caption` | tidak ada | 12/16 · 400 | 🟡 sedang | ✅ ditambahkan (rujukan) |
+| D4 | Pasangan `-fg` + `--color-focus` | hanya prosa | tabel eksplisit DS §1.1 | 🟡 sedang | ✅ didelegasikan |
+| D5 | `brand-700 #493326`, `brand-100 #EDE3DA` | tidak ada | ada di DS §1.1 | 🟢 rendah | ✅ didelegasikan |
+| D6 | `shadow-hover` | tidak ada | `0 4px 16px rgba(0,0,0,.08)` | 🟢 rendah | ✅ didelegasikan |
+| D7 | `space-12/16` (48/64) | berhenti di 40 | 48 & 64 | 🟢 rendah | ✅ didelegasikan |
+| D8 | Nama token radius (`sm/md/lg`) | beda dari DS | `rounded-sm/lg/card/xl/pill` | 🟢 rendah | ✅ didelegasikan |
+| D9 | Klaim "Button ≥44px" | semua ≥44 | `sm`=36 · `md`=44 · `lg`=48 | 🟢 rendah | ✅ diperbaiki |
+
+> Semua selisih **token** di atas sudah **dihapus dari PRD** (kini hanya merujuk DS). Tidak ada perubahan nilai token di DS itu sendiri dari tugas ini.
 
 ---
 
@@ -415,7 +432,7 @@ Deliverable ini **memakai penamaan & route yang sama** dengan `PRD-FRONTEND.md` 
 |---|---|---|
 | Route & shell | PRD-FRONTEND §2.2 (CustomerShell/AdminShell) | Wireframe mengikuti shell yang sama |
 | Nama komponen | PRD-FRONTEND §2.3–2.4 | Wireframe menyebut komponen by name (mis. `StickyPriceFooter`, `QtyStepper`) |
-| Design tokens | **Dokumen ini §3** (sumber kebenaran, disepakati FE) | FE menambahkan: pasangan `-fg`, `--color-focus`, aturan kontras, input ≥ 16px |
+| Design tokens | **`DESIGN-SYSTEM.md` §1–§4** (sumber kebenaran tunggal) | Dokumen ini §3 = **rujukan + daftar selisih**; FE menambahkan pasangan `-fg`, `--color-focus`, aturan kontras, input ≥ 16px |
 | Kontrak `PricingEngine` | PRD-FRONTEND §6.4 | Satu modul `packages/core/pricing`; urutan **Subtotal → Voucher → Poin → Pajak → Ongkir**; golden test `Rp 82.140` (§2.4) |
 | Spesifikasi `BottomSheet` | PRD-FRONTEND §6.5 | Snap 25/60/92%, drag handle ≥ 44px, focus-trap, safe-area |
 | Status order | process-flow §5 + PRD-FRONTEND §2.3-G | 7 status kanonik dipakai di Tracking & Admin Queue |
@@ -427,12 +444,14 @@ Deliverable ini **memakai penamaan & route yang sama** dengan `PRD-FRONTEND.md` 
 | Item | Status |
 |---|---|
 | Alignment Component Tree / route / 7 status order | ✅ Sinkron |
-| Design tokens §3 sebagai sumber kebenaran | ✅ Disepakati (tercatat di PRD-FRONTEND §6.1) |
-| Revisi kontras token (`warning`/`secondary`/`accent` fill-only) + `-fg` + `--color-focus` | ✅ Diadopsi ke §3.1 dokumen ini |
+| **Sumber kebenaran token** | ✅ **Dipindah ke `DESIGN-SYSTEM.md`** (PR #43) — dokumen ini §3 kini **rujukan**, bukan sumber kedua (v1.1, 12 Okt) |
+| Design tokens §3 sebagai sumber kebenaran | ⚠️ **DIUBAH** — token kini di `DESIGN-SYSTEM.md` §1–§4; §3 dokumen ini = ringkasan + daftar selisih |
+| Revisi kontras token (`warning`/`secondary`/`accent` fill-only) + `-fg` + `--color-focus` | ✅ Diadopsi ke §3.1 dokumen ini & DS §1 |
 | Kontrak `PricingEngine` (§6.4) | ✅ Dikunci (selaras §2.4) |
 | Spesifikasi `BottomSheet` (§6.5) | ✅ Disepakati |
 | SavedPayment = Phase 2 | ✅ Dikunci PO |
 | **Divergensi Delivery** (Cart/Checkout wireframe) | ✅ **Diselesaikan** — tab Delivery + `DeliveryAddressCard` + ongkir ditambahkan (§2.4, §2.5) |
+| **Sinkronisasi §3 dengan DS** (tugas 12 Okt) | ✅ **Selesai** — 9 selisih token didokumentasikan & diperbaiki (lihat §3.6) |
 
 **Item yang masih perlu konfirmasi ke PO:**
 1. Nama & logo brand final untuk token warna (sementara: placeholder "CoffeeShop" + `--brand-primary #6F4E37`).
@@ -446,6 +465,8 @@ Deliverable ini **memakai penamaan & route yang sama** dengan `PRD-FRONTEND.md` 
 | 11 Okt 2026 | @frontend-engineer | Tokens §3 diterima sebagai sumber kebenaran + tambahan wajib (`-fg`, `--color-focus`, kontras, tabular-nums, input ≥16px) → diadopsi ke §3. |
 | 11 Okt 2026 | @frontend-engineer | Divergensi **Delivery** dilaporkan → UX menambahkan tab Delivery + `DeliveryAddressCard` + ongkir di §2.4/§2.5. **Resolved.** |
 | 11 Okt 2026 | @kantal (PO) | `SavedPayment` dikunci **Phase 2** → §2.6 & §4 diperbarui. |
+| 12 Okt 2026 | @kantal (PO) | Temuan risiko **dua sumber kebenaran**: `PRD-FRONTEND-UX.md` §3 tidak merujuk `DESIGN-SYSTEM.md`. Tugas sinkronisasi → §3 jadi **rujukan**, §2.4/§2.5 diselaraskan dgn audit, 9 selisih token dilaporkan (§3.6). **Selesai.** |
+| 12 Okt 2026 | @ui-ux-designer | `DESIGN-SYSTEM.md` di-merge (PR #43) & `UI-AUDIT.md` di-merge (PR #44, `10e04c00`) → §3 didelegasikan ke DS, temuan audit dirujuk di §2.4/§2.5. |
 
 ---
 
