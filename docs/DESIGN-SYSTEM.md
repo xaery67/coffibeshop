@@ -204,7 +204,7 @@ Ikon + teks; animasi menghormati `prefers-reduced-motion`.
 
 ### 5.6 Modal / BottomSheet ✅ `src/components/ui/BottomSheet.tsx`
 
-- **Mobile = BottomSheet**; **desktop (≥ lg) = Modal terpusat** (konten sama).
+- **Mobile = BottomSheet**; **desktop (≥ lg) = Modal terpusat** (konten sama). *Status: varian **desktop-modal belum diimplementasi** (backlog) — kode saat ini hanya `BottomSheet`; lihat audit UI §R5.*
 - Snap: **peek 25% · half 60% · full 92%** (default kustomisasi = `full`).
 - Drag handle area ≥ 44px (`aria-label="Geser untuk menutup"`), tutup bila geser > 30% tinggi.
 - Focus-trap, `Esc` menutup, `aria-modal="true"`, body scroll lock, fokus kembali ke pemicu, safe-area.
@@ -221,7 +221,9 @@ Ikon/ilustrasi (`aria-hidden`) + judul + deskripsi + CTA. Dipakai di Cart kosong
 
 ### 5.9 Error State ✅ `src/components/domain/States.tsx`
 
-`role="alert"`, ikon ⚠️, pesan, tombol "Coba lagi" (`secondary`, `sm`). Standar untuk semua fetch gagal.
+`role="alert"`, ikon ⚠️, pesan, tombol "Coba lagi" (`secondary`, **`md` = 44px**). Standar untuk semua fetch gagal.
+
+> **Keputusan (PO, #44):** tombol pemulihan adalah **aksi utama** di layar error → wajib **≥44px (§7.2)**. `sm` (36px) hanya untuk aksi sekunder padat, **bukan** aksi recovery. Sebelumnya §5.9 menulis `sm` → **kontradiksi dengan §7.2**, sudah diperbaiki di sini.
 
 ### 5.10 QuantityStepper ✅ `src/components/domain/QuantityStepper.tsx`
 
