@@ -3,19 +3,33 @@
 @tailwind utilities;
 
 :root {
-  --color-brand: #6f4e37;
-  --color-brand-fg: #ffffff;
-  --color-focus: #2563eb;
+  --color-primary: #6f4e37;
+  --color-primary-fg: #ffffff;
+  --color-primary-hover: #5a3e2b;
+  --color-secondary: #c8a27a;
+  --color-accent: #e8b44f;
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f7f4f0;
+  --color-text: #1f1b16;
+  --color-text-muted: #6b6257;
+  --color-border: #e5ded6;
+  --color-success: #2e7d32;
+  --color-warning: #ed8b00; /* fill saja — kontras 2.53:1 */
+  --color-warning-fg: #8a4b00; /* 6.80:1 ✔ untuk teks */
+  --color-error: #c62828;
+  --color-info: #1565c0;
+  --color-focus: #1565c0; /* focus ring kontras ≥ 3:1 (PRD §3.1) */
 }
 
 html { -webkit-text-size-adjust: 100%; }
-body { font-family: Inter, system-ui, sans-serif; }
-input, select, textarea { font-size: 16px; } /* cegah zoom di iOS */
+body { font-family: Inter, system-ui, sans-serif; color: var(--color-text); }
+input, select, textarea { font-size: 16px; } /* cegah auto-zoom iOS */
 .tabular-nums { font-variant-numeric: tabular-nums; }
 
-/* Fokus terlihat (WCAG 2.1 AA) */
+/* Fokus terlihat (WCAG 2.4.7) — outline 2px, offset 2px, tidak terpotong. */
 :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 
+/* Hormati preferensi pengguna (UX §3.4). */
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

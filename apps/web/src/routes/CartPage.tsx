@@ -1,79 +1,131 @@
 import { Link } from 'react-router-dom';
-import { useCartStore } from '../stores/cart.store.js';
+import { useCartStore, type Fulfillment } from '../stores/cart.store.js';
 import { useConfig } from '../hooks/useConfig.js';
+import { computeTotals, formatIDR, lineSubtotal } from '../lib/pricing.js';
+import { Button } from '../components/ui/Button.js';
+import { EmptyState } from '../components/domain/States.js';
+import { QuantityStepper } from '../components/domain/QuantityStepper.js';
 
+const FULFILLMENT_LABELS: { value: Fulfillment; label: string }[] = [
+  { value: 'pickup', label: 'Ambil di outlet' },
+  { value: 'dine_in', label: 'Dine-in' },
+  { value: 'delivery', label: 'Delivery' },
+];
+
+/** Cart (PRD-FRONTEND §2.3-D) — memakai PricingEngine (satu sumber harga, §6.4). */
 export function CartPage() {
   const { items, setQty, remove, fulfillment, setFulfillment } = useCartStore();
   const { data: config } = useConfig();
 
-  const subtotal = items.reduce((n, i) => n + i.unit_price * i.qty, 0);
-  const tax = Math.round(subtotal * (config?.tax_rate ?? 0.11));
-  const shipping = fulfillment === 'delivery' ? config?.shipping_flat_fee ?? 0 : 0;
-  const total = subtotal + tax + shipping;
+  const totals = computeTotals({
+    lines: items.map((i) => ({
+      basePrice: i.base_price,
+      variantDelta: i.variant?.priceAdjustment ?? 0,
+      options: i.options.map((o) => ({ priceAdjustment: o.priceAdjustment, qty: 1 })),
+      quantity: i.qty,
+    })),
+    taxRate: config?.tax_rate ?? 0,
+    deliveryFee: fulfillment === 'delivery' ? config?.shipping_flat_fee ?? 0 : 0,
+  });
 
   return (
     <section className="space-y-4">
-      <h1 className="text-xl font-bold text-brand">Keranjang</h1>
+      <h1 className="text-xl font-bold text-text">Keranjang</h1>
+
       {items.length === 0 ? (
-        <p className="text-sm text-neutral-500">
-          Keranjang kosong. <Link to="/menu" className="text-brand underline">Lihat menu</Link>
-        </p>
+        <EmptyState
+          title="Keranjang masih kosong"
+          description="Yuk pilih kopi favoritmu dulu."
+          action={
+            <Link to="/menu">
+              <Button>Lihat Menu</Button>
+            </Link>
+          }
+        />
       ) : (
         <>
           <ul className="divide-y divide-brand-100 rounded-card border border-brand-100 bg-white">
             {items.map((i) => (
-              <li key={i.id} className="flex items-center gap-3 p-4">
+              <li key={i.id} className="flex items-start gap-3 p-4">
                 <div className="flex-1">
-                  <p className="font-medium">{i.product_name}</p>
-                  <p className="text-sm tabular-nums text-neutral-500">
-                    Rp {i.unit_price.toLocaleString('id-ID')}
+                  <p className="font-medium text-text">{i.product_name}</p>
+                  {(i.variant || i.options.length > 0) && (
+                    <p className="mt-0.5 text-xs text-text-muted">
+                      {[i.variant?.name, ...i.options.map((o) => o.name)].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {i.note && <p className="mt-0.5 text-xs italic text-text-muted">“{i.note}”</p>}
+                  <p className="mt-1 tabular-nums text-sm text-text-muted">
+                    {formatIDR(i.unit_price)} × {i.qty} = <strong>{formatIDR(lineSubtotal({
+                      basePrice: i.base_price,
+                      variantDelta: i.variant?.priceAdjustment ?? 0,
+                      options: i.options.map((o) => ({ priceAdjustment: o.priceAdjustment, qty: 1 })),
+                      quantity: i.qty,
+                    }))}</strong>
                   </p>
                 </div>
-                <input
-                  type="number"
-                  min={1}
-                  value={i.qty}
-                  onChange={(e) => setQty(i.id, Number(e.target.value))}
-                  className="w-16 rounded border border-brand-100 px-2 py-1 text-center"
-                />
-                <button onClick={() => remove(i.id)} className="text-sm text-error hover:underline">
-                  Hapus
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  <QuantityStepper value={i.qty} onChange={(qty) => setQty(i.id, qty)} label={`Kuantitas ${i.product_name}`} />
+                  <button
+                    type="button"
+                    onClick={() => remove(i.id)}
+                    className="text-sm text-error hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+                  >
+                    Hapus
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
 
-          <div className="rounded-card border border-brand-100 bg-white p-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                checked={fulfillment === 'pickup'}
-                onChange={() => setFulfillment('pickup')}
-              />
-              Ambil di outlet
-            </label>
-            <label className="mt-2 flex items-center gap-2 text-sm">
-              <input
-                type="radio"
-                checked={fulfillment === 'delivery'}
-                onChange={() => setFulfillment('delivery')}
-              />
-              Delivery
-            </label>
-          </div>
+          <fieldset className="rounded-card border border-brand-100 bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-text">Metode pengambilan</legend>
+            <div className="flex flex-wrap gap-2">
+              {FULFILLMENT_LABELS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={fulfillment === f.value}
+                  onClick={() => setFulfillment(f.value)}
+                  className={[
+                    'min-h-[44px] rounded-pill border px-4 text-sm transition',
+                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
+                    fulfillment === f.value
+                      ? 'border-brand bg-brand-50 font-semibold text-brand'
+                      : 'border-border bg-white text-text hover:border-brand-500/50',
+                  ].join(' ')}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
-          <div className="space-y-1 rounded-card border border-brand-100 bg-white p-4 text-sm tabular-nums">
-            <div className="flex justify-between"><span>Subtotal</span><span>Rp {subtotal.toLocaleString('id-ID')}</span></div>
-            <div className="flex justify-between"><span>Pajak</span><span>Rp {tax.toLocaleString('id-ID')}</span></div>
-            {shipping > 0 && <div className="flex justify-between"><span>Ongkir</span><span>Rp {shipping.toLocaleString('id-ID')}</span></div>}
+          <div className="space-y-1 rounded-card border border-brand-100 bg-white p-4 text-sm tabular-nums" aria-live="polite">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{formatIDR(totals.subtotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Pajak</span>
+              <span>{formatIDR(totals.tax)}</span>
+            </div>
+            {totals.deliveryFee > 0 && (
+              <div className="flex justify-between">
+                <span>Ongkir</span>
+                <span>{formatIDR(totals.deliveryFee)}</span>
+              </div>
+            )}
             <div className="flex justify-between border-t border-brand-100 pt-1 font-bold text-brand">
-              <span>Total</span><span>Rp {total.toLocaleString('id-ID')}</span>
+              <span>Total</span>
+              <span>{formatIDR(totals.grandTotal)}</span>
             </div>
           </div>
 
-          <button className="w-full rounded-lg bg-brand py-3 font-semibold text-brand-fg hover:bg-brand-600">
+          <Button block size="lg">
             Checkout
-          </button>
+          </Button>
         </>
       )}
     </section>
