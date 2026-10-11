@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk, BadRequest } from '../../lib/http.js';
-import { optionalAuth, requireAuth, getGuestId } from '../../middleware/auth.js';
+import { optionalAuth, requireAuth, getGuestId, requireRole } from '../../middleware/auth.js';
 import { OrderService } from './order.service.js';
 import { streamOrderEvents } from './sse.controller.js';
 
@@ -88,6 +88,7 @@ orderRouter.get(
 orderRouter.get(
   '/queue',
   requireAuth,
+  requireRole('owner', 'manager', 'kasir', 'barista'),
   asyncHandler(async (req, res) => sendOk(res, await service.queue(req.query))),
 );
 
@@ -131,5 +132,6 @@ orderRouter.post(
 orderRouter.put(
   '/:id/status',
   requireAuth,
+  requireRole('owner', 'manager', 'kasir', 'barista'),
   asyncHandler(async (req, res) => sendOk(res, await service.updateStatus(req.params.id, req.body))),
 );

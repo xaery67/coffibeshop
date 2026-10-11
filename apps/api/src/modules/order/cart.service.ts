@@ -30,6 +30,19 @@ export async function writeCart(key: string, items: any[]): Promise<void> {
   await redisCache.setex(key, CART_TTL, JSON.stringify(items));
 }
 
+/** Cart meta (voucher, points) disimpan terpisah dari items. */
+const metaKey = (key: string) => `${key}:meta`;
+export async function readCartMeta(key: string): Promise<{ voucher_code?: string; discount?: number; points_to_redeem?: number; points_discount?: number } | null> {
+  const raw = await redisCache.get(metaKey(key));
+  return raw ? JSON.parse(raw) : null;
+}
+export async function writeCartMeta(key: string, meta: { voucher_code?: string; discount?: number; points_to_redeem?: number; points_discount?: number }): Promise<void> {
+  await redisCache.setex(metaKey(key), CART_TTL, JSON.stringify(meta));
+}
+export async function clearCartMeta(key: string): Promise<void> {
+  await redisCache.del(metaKey(key));
+}
+
 /** Hitung harga (pricing engine sederhana — server-side, PRD-BACKEND §4.4, PRD-FRONTEND §355-359). */
 export async function priceCart(items: any[], opts?: { shipping?: number; discount?: number; pointsDiscount?: number }) {
   // Batch fetch products untuk hindari N+1 (bug #10)
@@ -59,13 +72,28 @@ export async function priceCart(items: any[], opts?: { shipping?: number; discou
       }
     }
 
+    // Bug #3: validasi opsi milik produk yang benar
+    const allValues = product.options.flatMap((o) => o.values);
+    for (const oid of item.option_ids ?? []) {
+      const v = allValues.find((x) => x.id === oid);
+      if (!v) {
+        priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Opsi tidak valid untuk produk ini' });
+        // mark as invalid to skip
+        break;
+      }
+    }
+    // If we pushed an unavailable item due to invalid option, skip the rest
+    const lastPriced = priced[priced.length - 1];
+    if (lastPriced && lastPriced.product_id === item.product_id && lastPriced.unavailable) {
+      continue;
+    }
+
     let unit = Number(product.base_price);
     if (item.variant_id) {
       const v = product.variants.find((x) => x.id === item.variant_id);
       if (v) unit += Number(v.price_delta);
     }
 
-    const allValues = product.options.flatMap((o) => o.values);
     for (const oid of item.option_ids ?? []) {
       const v = allValues.find((x) => x.id === oid);
       if (v) unit += Number(v.price_adjustment);
