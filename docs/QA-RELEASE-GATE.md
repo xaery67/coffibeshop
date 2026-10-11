@@ -45,8 +45,8 @@ Dijalankan pada branch `test/qa-suite-mvp` (base `main` = `24e0fcc`).
 | G2 Test API | ✅ **217 lulus, 19 skip** (13 file) | 19 skip = test DB-guarded (E2E/migrasi) |
 | G3 Test Web | ✅ **103 lulus** (8 file) | |
 | G4 Build | ✅ **sukses** (API + Web + shared) | `npm run build` |
-| G5 Migrasi DB segar | ✅ manual (lihat §3.2) | `cb_mig_test` → index trgm ada (6 test) |
-| G6 Smoke E2E | ✅ manual E2E `checkout.e2e.test.ts` (7 kasus) | butuh Postgres |
+| G5 Migrasi DB segar | ✅ DB sementara per-test (lihat §3.2) | `cb_qa_mig_*` → index trgm ada; aman paralel |
+| G6 Smoke E2E | ✅ manual E2E `checkout.e2e.test.ts` (7 kasus) | butuh Postgres; hijau saat suite paralel |
 | G7 Bug | ⚠️ lihat §5 (temuan #18-1) | 0 Critical; 1 High terbuka (payment stub) |
 | G8 AC-1…AC-12 | ⏳ verifikasi PO | |
 | G9 Realtime | ⏳ butuh lingkungan SSE/WS | |
@@ -79,18 +79,28 @@ npm run build
 
 ### 3.2 Migrasi DB segar (G5)
 
-```bash
-# 1) Siapkan DB kosong (sekali)
-createdb cb_mig_test     # atau: docker exec coffibeshop-postgres createdb -U coffibeshop cb_mig_test
+Test migrasi membuat **DATABASE SEMENTARA sendiri** (`cb_qa_mig_<ts>_<rand>`) dari
+koneksi `QA_TEST_DATABASE_URL`, menjalankan `migrate deploy` di sana, lalu men-`DROP`-nya.
+DB bersama **tidak disentuh**, sehingga aman berjalan **paralel** dengan `checkout.e2e.test.ts`.
 
-# 2) Jalankan test migrasi (dari apps/api)
+```bash
+# 1) Siapkan DB bersama (sekali)
+docker exec -i coffibeshop-postgres psql -U coffibeshop -d postgres -c "CREATE DATABASE cb_test"
+
+# 2) Jalankan SELURUH suite dengan DB test (paralel, default) — inilah bukti utama
 cd apps/api
-QA_TEST_DATABASE_URL='postgresql://coffibeshop:coffibeshop@localhost:5432/cb_mig_test' \
-  npx vitest run src/db/migration.test.ts
+QA_TEST_DATABASE_URL='postgresql://coffibeshop:coffibeshop@localhost:5432/cb_test' \
+  npx vitest run
+# → 13 file lulus, 230 lulus / 6 skip, 0 gagal
 ```
 
-Test ini: `prisma migrate deploy` dari DB kosong → assert tabel inti ada → assert
-**index `trgm`** pada kolom pencarian ada → assert extension **`pg_trgm`** aktif.
+Test migrasi: `prisma migrate deploy` dari DB kosong → assert tabel inti ada →
+assert **index `trgm`** pada kolom pencarian ada → assert extension **`pg_trgm`** aktif.
+
+> **Catatan isolasi (regresi #18):** sebelumnya test migrasi menjalankan
+> `DROP SCHEMA public CASCADE` di DB bersama → menjatuhkan schema di tengah test
+> checkout paralel → 7 test checkout gagal. Kini migrasi memakai DB sementara
+> per-test (`withIsolatedDb`), jadi tidak ada lagi saling-ganggu antar-file.
 
 ### 3.3 Smoke E2E (G6)
 
@@ -104,7 +114,7 @@ bash scripts/smoke-test.sh          # /health → /config → catalog → cart �
 
 ```bash
 cd apps/api
-QA_TEST_DATABASE_URL='postgresql://coffibeshop:coffibeshop@localhost:5432/cb_e2e_test' \
+QA_TEST_DATABASE_URL='postgresql://coffibeshop:coffibeshop@localhost:5432/cb_test' \
   npx vitest run src/modules/order/checkout.e2e.test.ts
 ```
 
@@ -220,3 +230,4 @@ Diukur dengan `vitest run --coverage` (provider v8).
 | Versi | Tanggal | Perubahan |
 |-------|---------|-----------|
 | 1.0 | 11 Okt 2026 | Dokumen awal gate rilis MVP (#18): 10 gate, checklist 6 seksi, temuan bug, coverage before/after |
+| 1.1 | 11 Okt 2026 | **Fix isolasi DB**: test migrasi memakai DB sementara per-test (`withIsolatedDb`) — hilangkan regresi 7 test checkout saat suite paralel dengan `QA_TEST_DATABASE_URL` |

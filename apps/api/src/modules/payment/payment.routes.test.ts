@@ -103,6 +103,7 @@ describe('POST /payments/initiate — mulai pembayaran', () => {
    * (belum ada penyimpanan key → respons). Test ini mendokumentasikan perilaku saat ini;
    * setelah gateway idempotent mendarat, test ini HARUS diperbarui (lihat security-gaps).
    */
+  // TODO(#7): update saat gateway idempotent mendarat
   it('[GAP] Idempotency-Key belum berpengaruh — dua panggilan menghasilkan respons berbeda', async () => {
     const key = 'idem-key-abc';
     const a = await srv.request('POST', '/api/v1/payments/initiate', {
@@ -145,6 +146,7 @@ describe('POST /payments/webhook/:provider — callback gateway', () => {
    * (attacker bisa memalsukan "pembayaran sukses"). Spesifikasi yang diharapkan
    * (invalid signature → 401) ada di payment.security-gaps.test.ts.
    */
+  // TODO(#7): update saat gateway idempotent mendarat
   it('[GAP] payload TANPA signature tetap diterima (bukti belum ada verifikasi)', async () => {
     const res = await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
       rawBody: JSON.stringify({ transaction_id: 'forged', transaction_status: 'settlement' }),
@@ -154,6 +156,7 @@ describe('POST /payments/webhook/:provider — callback gateway', () => {
     expect(expectOk(res.json).received).toBe(true);
   });
 
+  // TODO(#7): update saat gateway idempotent mendarat
   it('[GAP] provider tidak dikenal tetap diterima 200 (belum ada allowlist)', async () => {
     const res = await srv.request('POST', '/api/v1/payments/webhook/unknown-gateway', {
       body: { transaction_id: 'x' },
