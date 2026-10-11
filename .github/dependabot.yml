@@ -1,5 +1,8 @@
 version: 2
 updates:
+  # ── npm (root monorepo) ──
+  # Kebijakan: bump MINOR/PATCH otomatis (digrup); MAJOR ditunda sampai MVP
+  # stabil — lihat issue #38 (tech debt upgrade major).
   - package-ecosystem: npm
     directory: /
     schedule:
@@ -8,18 +11,28 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
 
+  # ── Docker: image runtime juga tunda major (node 20→25, nginx 1.27→1.31) ──
   - package-ecosystem: docker
     directory: /apps/api
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: docker
     directory: /apps/web
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
