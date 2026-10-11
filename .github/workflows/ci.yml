@@ -100,6 +100,9 @@ jobs:
       - name: Build shared
         run: npm run build --workspace=@coffibeshop/shared
 
+      - name: Generate Prisma client
+        run: npm run db:generate --workspace=@coffibeshop/api --if-present
+
       - name: Coverage — API
         run: npm run test --workspace=@coffibeshop/api -- --coverage
 
@@ -164,7 +167,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trivy scan (API image)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: coffibeshop/api:ci
           format: table
@@ -174,7 +177,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Trivy scan (Web image)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: coffibeshop/web:ci
           format: table
@@ -184,7 +187,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Trivy scan (filesystem / dependencies)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           scan-type: fs
           scan-ref: .
