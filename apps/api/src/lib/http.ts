@@ -58,6 +58,47 @@ export function errorHandler(
     });
     return;
   }
+
+  // ── Prisma: ubah error teknis jadi status HTTP yang benar (jangan bocorkan 500) ──
+  const name = (err as { name?: string })?.name ?? '';
+  const raw = err instanceof Error ? err.message : '';
+
+  if (name === 'PrismaClientValidationError' || /Inconsistent column data: Error creating UUID|invalid character/i.test(raw)) {
+    res.status(400).json({
+      success: false,
+      data: null,
+      error: { code: 'BAD_REQUEST', message: 'Format ID tidak valid (harus UUID)' },
+    });
+    return;
+  }
+  if (name === 'PrismaClientKnownRequestError') {
+    const code = (err as { code?: string }).code;
+    if (code === 'P2002') {
+      res.status(409).json({
+        success: false,
+        data: null,
+        error: { code: 'CONFLICT', message: 'Data sudah ada (duplikat)' },
+      });
+      return;
+    }
+    if (code === 'P2025') {
+      res.status(404).json({
+        success: false,
+        data: null,
+        error: { code: 'NOT_FOUND', message: 'Data tidak ditemukan' },
+      });
+      return;
+    }
+    if (code === 'P2003') {
+      res.status(400).json({
+        success: false,
+        data: null,
+        error: { code: 'BAD_REQUEST', message: 'Referensi tidak valid (relasi tidak ada)' },
+      });
+      return;
+    }
+  }
+
   const message = err instanceof Error ? err.message : 'Internal server error';
   res.status(500).json({
     success: false,

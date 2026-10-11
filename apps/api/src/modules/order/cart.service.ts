@@ -26,9 +26,9 @@ export async function priceCart(items: any[], opts?: { shipping?: number; discou
   for (const item of items) {
     const product = await prisma.product.findUnique({
       where: { id: item.product_id },
-      include: { variants: true, options: true },
+      include: { variants: true, options: { include: { values: true } } },
     });
-    if (!product || !product.is_active) {
+    if (!product || !product.is_active || !product.is_available) {
       priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0 });
       continue;
     }
@@ -37,9 +37,11 @@ export async function priceCart(items: any[], opts?: { shipping?: number; discou
       const v = product.variants.find((x) => x.id === item.variant_id);
       if (v) unit += Number(v.price_delta);
     }
+    // option_ids merujuk ke OptionValue.id (harga ada di value, bukan option).
+    const allValues = product.options.flatMap((o) => o.values);
     for (const oid of item.option_ids ?? []) {
-      const o = product.options.find((x) => x.id === oid);
-      if (o) unit += Number(o.price_delta);
+      const v = allValues.find((x) => x.id === oid);
+      if (v) unit += Number(v.price_adjustment);
     }
     const line_total = unit * item.qty;
     subtotal += line_total;
