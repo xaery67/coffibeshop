@@ -166,34 +166,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Catatan: memakai image resmi aquasec/trivy via `docker run` (bukan
+      # aquasecurity/trivy-action) agar tidak bergantung pada wrapper action yang
+      # versinya bisa hilang. Gate tetap fail-on-high (exit-code 1).
       - name: Trivy scan (API image)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: coffibeshop/api:ci
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-          trivyignores: .trivyignore
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            aquasec/trivy:latest image --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+              coffibeshop/api:ci
 
       - name: Trivy scan (Web image)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          image-ref: coffibeshop/web:ci
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-          trivyignores: .trivyignore
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            aquasec/trivy:latest image --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+              coffibeshop/web:ci
 
       - name: Trivy scan (filesystem / dependencies)
-        uses: aquasecurity/trivy-action@v0.28.0
-        with:
-          scan-type: fs
-          scan-ref: .
-          format: table
-          exit-code: '1'
-          ignore-unfixed: true
-          severity: CRITICAL,HIGH
-          scanners: vuln
-          trivyignores: .trivyignore
+        run: |
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            -w /src aquasec/trivy:latest fs --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --scanners vuln \
+              --exit-code 1 .
