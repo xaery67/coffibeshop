@@ -1,0 +1,44 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versi (mis. v0.1.0)'
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci || npm install
+      - run: npm run db:generate --workspace=@coffibeshop/api --if-present
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+      - run: npm run build --if-present
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db
+          JWT_ACCESS_SECRET: build-secret
+          JWT_REFRESH_SECRET: build-secret
+      - name: Package artifacts
+        run: |
+          mkdir -p release
+          tar -czf release/api-dist.tar.gz -C apps/api/dist .
+          tar -czf release/web-dist.tar.gz -C apps/web/dist .
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release/*.tar.gz
+          generate_release_notes: true
