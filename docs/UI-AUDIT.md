@@ -1,6 +1,6 @@
 # 🔍 UI Audit — Kepatuhan terhadap Design System
 
-> **Versi:** v1.0 · **Tanggal:** 2026-10-12 · **Auditor:** UI/UX Designer (@ui-ux-designer)
+> **Versi:** v1.1 · **Tanggal:** 2026-10-12 · **Auditor:** UI/UX Designer (@ui-ux-designer)
 > **Base commit:** `d34e2737` (design system sudah ter-merge, PR #43)
 > **Rujukan:** `docs/DESIGN-SYSTEM.md` (§), `docs/UX-FLOWS.md` (§), `docs/PRD-FRONTEND-UX.md`.
 > **Metode:** membaca kode nyata (`apps/web/src/**`) + `tailwind.config.js` + `styles/index.css`, lalu dibandingkan dengan `DESIGN-SYSTEM.md` yang sudah di-merge. Setiap temuan disertai `file:baris` + kutipan.
@@ -63,10 +63,10 @@
 | **R2** | `routes/ProductDetailPage.tsx:219` | Gambar galeri tanpa `loading="lazy"` (kartu produk sudah punya) | `<img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />` | DS §5.12 (pola lazy) | Tambah `loading="lazy" decoding="async"` |
 | **R3** | `routes/HomePage.tsx:23` | `text-brand-100` dipakai sebagai **warna teks**; token ini diperuntukkan latar/border | `<p className="mt-2 max-w-xl text-brand-100">` | DS §1.1 (brand-100 = border/latar) | Pakai `text-brand-fg`/`text-white` (kontras 5.89:1 ✔ sama, tapi semantik benar) |
 | **R4** | `components/layout/Shell.tsx:49` | Shadow CartFAB `0 4px 16px rgba(0,0,0,0.18)` ≠ token `elev2` (`0 -4px 16px …0.10`) | `shadow-[0_4px_16px_rgba(0,0,0,0.18)]` | DS §4 (elev2) | Tambah token `elev-fab` atau pakai `elev2` |
-| **R5** | `DESIGN-SYSTEM.md` §5.6 vs `BottomSheet.tsx` | DS menyebut "desktop (≥lg) = **Modal terpusat**", kode hanya punya `BottomSheet` | `BottomSheet` tanpa varian modal | DS §5.6 | Tandai sebagai **belum diimplementasi** (backlog) atau hapus klaim desktop-modal |
+| **R5** | `DESIGN-SYSTEM.md` §5.6 vs `BottomSheet.tsx` | DS menyebut "desktop (≥lg) = **Modal terpusat**", kode hanya punya `BottomSheet` | `BottomSheet` tanpa varian modal | DS §5.6 | ✅ **Diputuskan PO:** tandai **belum diimplementasi (backlog)** di DS §5.6 — sudah diperbarui |
 | **R6** | `routes/ProductDetailPage.tsx:66–72` | Skeleton **inline** (duplikasi) padahal ada `ProductCardSkeleton` | `<div className="h-64 w-full rounded-card bg-brand-100" />` | DS §5.7 | Ekstrak `ProductDetailSkeleton` reusable |
 | **R7** | `components/ui/BottomSheet.tsx:135` | Drag handle memakai warna **non-token** `bg-neutral-300` | `<span className="h-1 w-9 rounded-full bg-neutral-300" …>` | DS §1.1 | Ganti ke token (mis. `bg-border`) |
-| **R8** | `components/domain/States.tsx:46` | Tombol "Coba lagi" memakai `size="sm"` (**36px < 44px**) — di bawah target sentuh untuk aksi pemulihan | `<Button variant="secondary" size="sm">Coba lagi</Button>` | **DS §5.9** (menyebut `sm`) **vs DS §7.2** (semua kontrol ≥44px) | Naikkan ke `size="md"` (44px); **§5.9 vs §7.2 saling bertentangan → perlu keputusan** |
+| **R8** | `components/domain/States.tsx:46` | Tombol "Coba lagi" memakai `size="sm"` (**36px < 44px**) — di bawah target sentuh untuk aksi pemulihan | `<Button variant="secondary" size="sm">Coba lagi</Button>` | **DS §5.9** (menyebut `sm`) **vs DS §7.2** (semua kontrol ≥44px) | ✅ **Diputuskan PO: §7.2 menang** → naikkan ke `size="md"` (44px). Kontradiksi DS §5.9 sudah diperbaiki |
 
 ---
 
@@ -117,9 +117,11 @@
 ### 🧹 Backlog kebersihan (kapan saja)
 - **R1–R8** — satukan hover token, lazy galeri, semantik `brand-100`, token FAB, tandai modal desktop, ekstrak skeleton, token handle sheet, naikkan tombol "Coba lagi".
 
-### 📄 Perlu keputusan pemilik dokumen (saya) / PO
-- **M1/M2/R5**: `DESIGN-SYSTEM.md` menyebut token/aturan yang **belum ada di kode**. Saya akan menyinkronkan dokumen **atau** menyerahkan daftar token baru ke @frontend-engineer — mohon arahan PO (mana target #11, mana backlog).
-- **R8**: **DS §5.9** (ErrorState pakai `sm`) **bertentangan** dengan **DS §7.2** (semua kontrol ≥44px). Perlu diputuskan agar tidak jadi temuan berulang.
+### 📄 Keputusan PO atas temuan dokumen (sudah final)
+- **M1/M2 (doc↔code):** **kode menyesuaikan dokumen** — token `boxShadow` (`elev1/elev2/hover`) & `fontSize.caption/price` ditambahkan di `tailwind.config.js` sebagai bagian **#11**. Dokumen = kontrak yang benar.
+- **R5 (modal desktop):** ditandai **belum diimplementasi (backlog)** di DS §5.6 — sudah diperbarui.
+- **R8 (DS §5.9 vs §7.2):** **§7.2 menang** — tombol "Coba lagi" naik ke `size="md"` (44px); kontradiksi di DS §5.9 sudah diperbaiki.
+- **Catatan:** perubahan DS di atas sudah diterapkan di `docs/DESIGN-SYSTEM.md` pada PR ini (§5.6 & §5.9).
 
 ---
 
@@ -141,6 +143,7 @@
 - **Semua temuan berasal dari kode nyata** (bukan tebakan). Bila ada keraguan, ditandai eksplisit (mis. kontras `text-neutral-400` = "≈2.5:1" dihitung, bukan diklaim presisi).
 - **Koreksi yang saya buang sebelum publikasi:** draf awal memuat temuan *"radius tombol `rounded-lg` 8px ≠ 12px"*. Setelah membaca ulang `DESIGN-SYSTEM.md` §4, **DS sendiri menyatakan `rounded-lg` (8px) untuk tombol** → kode **patuh**, temuan itu **tidak valid** dan dihapus. Pelajaran: **audit wajib membaca dokumen rujukan, bukan asumsi.**
 - **Temuan dokumen (M1, M2, R5, R8)** membuktikan `DESIGN-SYSTEM.md` (baru di-merge) sudah **sedikit lebih maju dari kode** atau punya **pertentangan internal** — perlu disinkronkan, bukan berarti kode salah.
+- **Tindak lanjut (revisi v1.1, keputusan PO):** M1/M2 → kode menyesuaikan dokumen (token ditambah di #11); R5 → ditandai backlog di DS §5.6; R8 → DS §5.9 diperbaiki (`sm`→`md`, §7.2 menang). Perubahan diterapkan di `docs/DESIGN-SYSTEM.md` pada PR yang sama.
 
 ---
 
