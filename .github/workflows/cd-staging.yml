@@ -22,7 +22,7 @@ jobs:
             echo "::notice::Registry secrets belum dikonfigurasi - deploy dilewati"
           fi
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
         if: steps.check.outputs.configured == 'true'
 
       - name: Log in to registry
