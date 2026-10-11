@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@coffibeshop/shared": "*",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.10.0",
     "@supabase/supabase-js": "^2.117.3",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.28.1",
