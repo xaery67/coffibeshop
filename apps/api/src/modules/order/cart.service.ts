@@ -6,6 +6,17 @@ import { BadRequest } from '../../lib/http.js';
 
 const CART_TTL = 7 * 24 * 60 * 60; // 7 hari (ADR-006)
 
+/** Normalisasi input: terima `selected_options` (PRD) dan `option_ids` (FE), `quantity` dan `qty`. */
+export function normalizeCartItemInput(item: any) {
+  return {
+    product_id: item.product_id,
+    variant_id: item.variant_id ?? null,
+    option_ids: item.selected_options ?? item.option_ids ?? [],
+    qty: item.quantity ?? item.qty ?? 1,
+    notes: item.notes,
+  };
+}
+
 /** Key cart member & guest. */
 const memberKey = (userId: string) => `cart:member:${userId}`;
 const guestKey = (guestId: string) => `cart:guest:${guestId}`;
@@ -19,44 +30,68 @@ export async function writeCart(key: string, items: any[]): Promise<void> {
   await redisCache.setex(key, CART_TTL, JSON.stringify(items));
 }
 
-/** Hitung harga (pricing engine sederhana — server-side, PRD-BACKEND §4.4). */
-export async function priceCart(items: any[], opts?: { shipping?: number; discount?: number }) {
+/** Hitung harga (pricing engine sederhana — server-side, PRD-BACKEND §4.4, PRD-FRONTEND §355-359). */
+export async function priceCart(items: any[], opts?: { shipping?: number; discount?: number; pointsDiscount?: number }) {
+  // Batch fetch products untuk hindari N+1 (bug #10)
+  const productIds = [...new Set(items.map(i => i.product_id))];
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds } },
+    include: { variants: true, options: { include: { values: true } } },
+  });
+  const productMap = new Map(products.map(p => [p.id, p]));
+
   let subtotal = 0;
   const priced = [];
+
   for (const item of items) {
-    const product = await prisma.product.findUnique({
-      where: { id: item.product_id },
-      include: { variants: true, options: { include: { values: true } } },
-    });
+    const product = productMap.get(item.product_id);
     if (!product || !product.is_active || !product.is_available) {
-      priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0 });
+      priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Produk tidak tersedia' });
       continue;
     }
+
+    // Cek stok varian (bug #8)
+    if (item.variant_id) {
+      const variant = product.variants.find(v => v.id === item.variant_id);
+      if (variant && variant.stock_quantity !== null && variant.stock_quantity <= 0) {
+        priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Varian habis' });
+        continue;
+      }
+    }
+
     let unit = Number(product.base_price);
     if (item.variant_id) {
       const v = product.variants.find((x) => x.id === item.variant_id);
       if (v) unit += Number(v.price_delta);
     }
-    // option_ids merujuk ke OptionValue.id (harga ada di value, bukan option).
+
     const allValues = product.options.flatMap((o) => o.values);
     for (const oid of item.option_ids ?? []) {
       const v = allValues.find((x) => x.id === oid);
       if (v) unit += Number(v.price_adjustment);
     }
+
     const line_total = unit * item.qty;
     subtotal += line_total;
     priced.push({ ...item, product_name: product.name, unit_price: unit, line_total, unavailable: false });
   }
-  const tax = Math.round(subtotal * env.TAX_RATE);
-  const shipping = opts?.shipping ?? 0;
+
+  // Rumus pajak benar: taxable = max(0, subtotal - discount - pointsDiscount)
   const discount = opts?.discount ?? 0;
+  const pointsDiscount = opts?.pointsDiscount ?? 0;
+  const taxable = Math.max(0, subtotal - discount - pointsDiscount);
+  const tax = Math.round(taxable * env.TAX_RATE);
+  const shipping = opts?.shipping ?? 0;
+  const total = Math.max(0, taxable + tax + shipping);
+
   return {
     items: priced,
     subtotal,
     tax,
     shipping_fee: shipping,
     discount,
-    total: subtotal + tax + shipping - discount,
+    points_discount: pointsDiscount,
+    total,
   };
 }
 
