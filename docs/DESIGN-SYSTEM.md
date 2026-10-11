@@ -232,6 +232,44 @@ Tombol −/+ inline (**tanpa tombol "Apply"**), target sentuh 44×44px, nilai `t
 
 Format Rupiah terpusat (`formatIDR`: `84000 → "Rp 84.000"`), `tabular-nums`. **Selalu** pakai ini, jangan format manual.
 
+**Props:** `value: number`, `size?: 'sm'|'md'|'lg'`, `className?`. Kelas dasar: `tabular-nums font-bold text-brand`.
+
+### 5.12 ProductCard ✅ `src/components/domain/ProductCard.tsx`
+
+Kartu produk untuk **Home, Menu, Rekomendasi** (dipakai #11). Seluruh kartu = tautan ke PDP.
+
+**Props:** `product: ProductDTO`.
+
+- Struktur: `Card interactive` → `Link to={/product/:id}` (`aria-label="Lihat detail {nama}"`) → gambar rasio **4:3** (`object-cover`, `loading="lazy"`, `decoding="async"`, `alt={product.name}`) → judul `text-h3 line-clamp-1` → deskripsi `line-clamp-2 text-muted` → footer `PriceText` + badge **"Habis"** bila `!is_available`.
+- Bila tanpa gambar: placeholder ☕ (`aria-hidden`). Badge "Habis" = `bg-error/10 text-error` (ikon/teks, bukan warna saja).
+- **A11y:** satu tautan fokus per kartu; `alt` = nama produk; `focus-visible` ring pada Link.
+
+### 5.13 ProductCardSkeleton ✅ `src/components/domain/ProductCard.tsx`
+
+Placeholder bentuk kartu produk (`aspect-[4/3]` + 3 bar) dengan `animate-pulse`, `aria-hidden="true"`.
+Cegah layout shift saat grid produk memuat. Render `count` sesuai jumlah kolom.
+
+### 5.14 OptionChipGroup ✅ `src/components/domain/OptionChipGroup.tsx`
+
+Pemilih opsi pada **PDP** (dipakai #11). Mendukung `single` (radio) & `multiple` (checkbox), menghormati `min_select`/`max_select`.
+
+**Props:** `option: OptionDTO`, `selectedIds: string[]`, `onToggle: (valueId: string) => void`.
+
+- Struktur: `<fieldset>` + `<legend>` (nama opsi + " (wajib)" bila `is_required`; "maks N" bila multiple) → container `role="radiogroup"|"group"` → chip `role="radio"|"checkbox"` + `aria-checked`.
+- Chip: `min-h-[44px]`, `rounded-pill`, selected = `border-brand bg-brand-50 text-brand` **+ ikon ✓** (bukan warna saja — WCAG 1.4.1); menampilkan `+{formatIDR(price_adjustment)}` bila ada biaya tambahan.
+- Saat mencapai `max_select` (multiple): chip yang belum terpilih `disabled` + `aria-disabled` + `opacity-50`.
+- **A11y:** setiap chip ≥ 44px, fokus ring, label grup via `legend`/`aria-label`.
+
+### 5.15 StickyPriceFooter ✅ `src/components/domain/StickyPriceFooter.tsx`
+
+Footer harga real-time + tombol aksi utama di **PDP** (dipakai #11). Harga **wajib** dari PricingEngine (satu sumber).
+
+**Props:** `unitPrice: number`, `onAdd: () => void`, `disabled?: boolean`, `disabledReason?: string`, `addLabel?: string`.
+
+- `sticky bottom-0`, `bg-white/95 backdrop-blur`, border atas `brand-100`, safe-area (`env(safe-area-inset-bottom)`).
+- Menampilkan `PriceText size="lg"` + `Button block size="lg"` ("Tambah · Rp XX").
+- Bila `disabled`: tombol nonaktif + alasan `role="alert"` `text-warning-fg` (`aria-describedby`) — kombinasi opsi tak tersedia dijelaskan, bukan error setelah submit.
+
 ---
 
 ## 6. Ikon & Motion
@@ -292,7 +330,11 @@ Format Rupiah terpusat (`formatIDR`: `84000 → "Rp 84.000"`), `tabular-nums`. *
 | `Card` | ✅ | `variant?: 'product'\|'order'\|'kpi'`, `interactive?`, `children` |
 | `BottomSheet` | ✅ | `open`, `onClose`, `snap?: 'peek'\|'half'\|'full'`, `title?`, `footer?`, `children` |
 | `QuantityStepper` | ✅ | `value`, `min?`, `max?`, `onChange(next)`, `label?` |
-| `PriceText` / `formatIDR` | ✅ | `value: number` (integer Rupiah) |
+| `PriceText` / `formatIDR` | ✅ | `value: number` (integer Rupiah); `PriceText`: `value`, `size?: 'sm'\|'md'\|'lg'`, `className?` |
+| `ProductCard` | ✅ | `product: ProductDTO` |
+| `ProductCardSkeleton` | ✅ | — (bentuk kartu produk) |
+| `OptionChipGroup` | ✅ | `option: OptionDTO`, `selectedIds: string[]`, `onToggle(valueId)` |
+| `StickyPriceFooter` | ✅ | `unitPrice`, `onAdd()`, `disabled?`, `disabledReason?`, `addLabel?` |
 | `EmptyState` | ✅ | `icon?`, `title`, `description?`, `action?` |
 | `ErrorState` | ✅ | `message?`, `onRetry?` |
 | `Input` | 🆕 | `label`, `error?`, `required?`, `hint?`, `inputMode?`, `...inputProps` |

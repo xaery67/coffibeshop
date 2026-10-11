@@ -292,11 +292,14 @@ Mode Pickup/Dine-in                Mode Delivery
 
 | Layar | Komponen utama | Status | Catatan |
 |---|---|---|---|
-| Cart | `CartPage`, `QuantityStepper`, `EmptyState`, `Button`, `PriceText` | sebagian ✅ | tambah panel alamat utk Delivery |
+| Menu / PDP (#11) | `ProductCard` ✅, `ProductCardSkeleton` ✅, `OptionChipGroup` ✅, `StickyPriceFooter` ✅, `PriceText` ✅, `Card` ✅ | ✅ ada | dipakai di Home/Menu/Rekomendasi & kustomisasi |
+| Cart | `CartPage`, `QuantityStepper` ✅, `EmptyState` ✅, `Button` ✅, `PriceText` ✅ | sebagian ✅ | tambah panel alamat utk Delivery |
 | Checkout | `CheckoutStepper` 🆕, `Input` 🆕, `GuestCheckoutButton` 🆕, `Toast` 🆕 | 🆕 | ≤ 5 langkah (§3.1) |
 | Pembayaran | `PaymentMethodDetail`, `CopyToClipboard`, `ResultStates`, `Badge` 🆕 | 🆕 | state pending/paid/failed/expired |
 | Tracking | `StatusTimeline`, `EtaBadge`, `OrderItemsSummary`, `NotificationToggle` | 🆕 | SSE + fallback polling |
 | Admin | `QueueColumns`, `OrderTicketCard`, `StatusActionBar`, `ConfirmDialog` | 🆕 | realtime < 3s; cancel + alasan |
+
+> **Legenda status:** ✅ sudah ada di repo (dokumentasi di `DESIGN-SYSTEM.md` §5) · 🆕 perlu dibuat @frontend-engineer.
 
 Detail token, varian, dan contoh class ada di **`docs/DESIGN-SYSTEM.md` §5 & §8**.
 
