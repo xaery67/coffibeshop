@@ -78,7 +78,7 @@ model Outlet {
   opening_hours Json     @default("{}")
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  updated_at    DateTime @default(now()) @updatedAt
 
   products   Product[]
   categories Category[]
@@ -131,6 +131,9 @@ model Product {
   @@index([outlet_id])
   @@index([is_active])
   @@index([is_available])
+  // GIN trigram indexes untuk pencarian typo-tolerant (issue #4)
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_name_trgm_idx")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_description_trgm_idx")
   @@map("products")
 }
 
