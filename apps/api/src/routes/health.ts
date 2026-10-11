@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler, sendOk } from '../lib/http.js';
+import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../config/prisma.js';
 import { pingRedis } from '../config/redis.js';
 

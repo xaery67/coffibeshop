@@ -1,34 +1,38 @@
 import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import globals from 'globals';
 
-/** Konfigurasi ESLint flat (root) — sederhana untuk monorepo. */
-export default [
-  js.configs.recommended,
+/** Konfigurasi ESLint flat (root) — untuk seluruh monorepo. */
+export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/*.config.js'],
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/.tmp/**',
+      '**/*.config.js',
+      '**/prisma/migrations/**',
+    ],
   },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
-    files: ['**/*.{ts,tsx}'],
+    files: ['**/*.{ts,tsx,js}'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
       globals: {
-        console: 'readonly',
-        process: 'readonly',
-        Buffer: 'readonly',
-        fetch: 'readonly',
-        crypto: 'readonly',
-        localStorage: 'readonly',
-        setInterval: 'readonly',
-        clearInterval: 'readonly',
-        setTimeout: 'readonly',
-        URL: 'readonly',
-        EventSource: 'readonly',
-        MessageEvent: 'readonly',
+        ...globals.node,
+        ...globals.browser,
       },
     },
     rules: {
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'off',
       'no-undef': 'off',
     },
   },
-];
+);

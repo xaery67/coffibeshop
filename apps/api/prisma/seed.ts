@@ -65,13 +65,11 @@ async function main() {
     create: { code: 'WELCOME10', discount_amount: 10000, min_purchase: 50000 },
   });
 
-  // eslint-disable-next-line no-console
   console.log('✅ Seed selesai. Owner:', owner.email);
 }
 
 main()
   .catch((e) => {
-    // eslint-disable-next-line no-console
     console.error(e);
     process.exit(1);
   })

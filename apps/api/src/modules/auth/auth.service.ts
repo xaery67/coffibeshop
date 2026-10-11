@@ -71,7 +71,7 @@ export class AuthService {
   }
 
   private sanitize(u: any) {
-    const { password_hash, ...rest } = u;
+    const { password_hash: _ph, ...rest } = u;
     return rest;
   }
 }

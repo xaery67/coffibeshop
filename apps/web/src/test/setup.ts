@@ -1,4 +1,4 @@
-import { beforeEach, vi } from 'vitest';
+import { beforeEach } from 'vitest';
 
 // jsdom kadang tak menyediakan localStorage penuh — beri implementasi in-memory.
 class MemoryStorage {

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
 import { redisCache } from '../../config/redis.js';
 import { env } from '../../config/env.js';
-import { BadRequest, NotFound } from '../../lib/http.js';
+import { BadRequest } from '../../lib/http.js';
 
 const CART_TTL = 7 * 24 * 60 * 60; // 7 hari (ADR-006)
 
