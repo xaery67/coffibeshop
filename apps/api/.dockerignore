@@ -4,3 +4,6 @@ dist
 .env.*
 *.log
 coverage
+# JWT keypair — di-mount saat runtime, JANGAN dibake ke image
+**/.keys
+*.pem

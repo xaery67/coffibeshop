@@ -17,3 +17,6 @@ coverage
 docs
 **/*.md
 !README.md
+# JWT keypair — di-mount saat runtime, JANGAN dibake ke image
+**/.keys
+*.pem

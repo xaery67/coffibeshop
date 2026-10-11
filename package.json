@@ -12,12 +12,12 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "npm run dev --workspace=@coffibeshop/api & npm run dev --workspace=@coffibeshop/web",
-    "dev:api": "npm run dev --workspace=@coffibeshop/api",
-    "dev:web": "npm run dev --workspace=@coffibeshop/web",
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "lint": "eslint .",
+    "dev": "npm run build --workspace=@coffibeshop/shared && (npm run dev --workspace=@coffibeshop/api & npm run dev --workspace=@coffibeshop/web)",
+    "dev:api": "npm run build --workspace=@coffibeshop/shared && npm run dev --workspace=@coffibeshop/api",
+    "dev:web": "npm run build --workspace=@coffibeshop/shared && npm run dev --workspace=@coffibeshop/web",
+    "build": "npm run build --workspace=@coffibeshop/shared && npm run build --workspaces --if-present",
+    "test": "npm run build --workspace=@coffibeshop/shared && npm run test --workspaces --if-present",
+    "lint": "npm run build --workspace=@coffibeshop/shared && eslint .",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "db:migrate": "npm run db:migrate --workspace=@coffibeshop/api",

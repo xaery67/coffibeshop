@@ -14,8 +14,9 @@ RUN npm ci --workspace=@coffibeshop/api --workspace=@coffibeshop/shared --includ
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 
-# Generate Prisma client + build TS
-RUN npm run db:generate --workspace=@coffibeshop/api \
+# Build shared DULU (api meng-import @coffibeshop/shared) lalu Prisma + TS
+RUN npm run build --workspace=@coffibeshop/shared \
+ && npm run db:generate --workspace=@coffibeshop/api \
  && npm run build --workspace=@coffibeshop/api
 
 # ── Stage 2: runtime (distroless, non-root) ──

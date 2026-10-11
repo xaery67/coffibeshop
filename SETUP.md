@@ -81,7 +81,7 @@ SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 REDIS_CACHE_URL=rediss://default:<PASSWORD>@<host>.upstash.io:6379
 REDIS_QUEUE_URL=rediss://default:<PASSWORD>@<host>.upstash.io:6379
-JWT_ACCESS_SECRET=<random-64-char>
+JWT_PRIVATE_KEY=<PEM RS256 — atau biarkan kosong & pakai .keys/ lokal>
 JWT_REFRESH_SECRET=<random-64-char>
 ```
 
@@ -119,7 +119,7 @@ Lihat `.env.example` di root. Kelompok:
 - **Core**: `NODE_ENV`, `API_PORT`, `API_BASE_URL`, `CORS_ORIGIN`
 - **Database**: `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_*`
 - **Redis**: `REDIS_CACHE_URL`, `REDIS_QUEUE_URL`
-- **Auth**: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`
+- **Auth**: `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` (RS256, PEM inline) atau `JWT_PRIVATE_KEY_PATH`/`JWT_PUBLIC_KEY_PATH`, `JWT_REFRESH_SECRET`, `JWT_ACCESS_TTL`, `JWT_REFRESH_TTL`
 - **Payment**: `MIDTRANS_SERVER_KEY`, `MIDTRANS_CLIENT_KEY`, `XENDIT_SECRET_KEY`, `PAYMENT_WEBHOOK_SECRET`
 - **Notification**: `FCM_SERVER_KEY`, `TWILIO_*`, `SENDGRID_API_KEY`
 - **Realtime**: `SSE_MAX_CONNECTIONS_PER_POD`, `WS_MAX_CONNECTIONS_PER_POD`, `TRACKING_POLL_INTERVAL_MS`
