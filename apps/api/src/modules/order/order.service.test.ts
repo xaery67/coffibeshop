@@ -15,6 +15,17 @@ const h = vi.hoisted(() => ({
   vouchers: [] as any[],
   store: new Map<string, string>(),
   events: [] as any[],
+  queueAdds: [] as any[],
+}));
+
+// Queue mock: tangkap (queue, jobName, payload) agar refund bisa di-assert nyata.
+vi.mock('../../queue/queues.js', () => ({
+  queues: {
+    payment: { add: async (name: string, payload: any) => void h.queueAdds.push({ queue: 'payment', name, payload }) },
+    notification: { add: async (name: string, payload: any) => void h.queueAdds.push({ queue: 'notification', name, payload }) },
+    loyalty: { add: async (name: string, payload: any) => void h.queueAdds.push({ queue: 'loyalty', name, payload }) },
+    reporting: { add: async (name: string, payload: any) => void h.queueAdds.push({ queue: 'reporting', name, payload }) },
+  },
 }));
 
 vi.mock('../../config/redis.js', () => ({
@@ -43,9 +54,13 @@ vi.mock('../../config/prisma.js', () => {
         return o;
       },
       update: async ({ where, data }: any) => {
-        const o = h.orders.find((x) => x.id === where.id);
-        Object.assign(o, data);
-        return o;
+        // Mimik Prisma: kembalikan objek BARU (jangan mutasi objek yang dipegang
+        // findUnique) — kalau tidak, `order.status` ikut berubah jadi CANCELLED
+        // dan guard `if (order.status === 'PAID')` di cancel() salah.
+        const idx = h.orders.findIndex((x) => x.id === where.id);
+        const updated = { ...h.orders[idx], ...data };
+        h.orders[idx] = updated;
+        return updated;
       },
     },
     orderStatusLog: {
@@ -201,6 +216,7 @@ beforeEach(() => {
   h.vouchers = [];
   h.store.clear();
   h.events = [];
+  h.queueAdds = [];
 });
 
 // ═══════════════ getCart / addItem / updateItem / removeItem ═══════════════
@@ -379,9 +395,32 @@ describe('cancel — customer (PENDING/PAID saja)', () => {
   });
 
   it('order tidak ditemukan → 404', async () => {
-    await expect(svc.cancel('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
+      await expect(svc.cancel('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
+    });
   });
-});
+
+  // ═══════════════ cancel refund queue (payment.refund) ═══════════════
+
+  describe('cancel — enqueue payment.refund job when PAID', () => {
+    it('menambahkan job payment.refund ke queue bila order PAID', async () => {
+      const o = seedOrder({ status: 'PAID', user_id: 'u1', total: 50000 });
+      await svc.cancel('u1', o.id, 'Refund dong');
+
+      // Job HARUS masuk ke queue `payment` dengan nama `refund` (bukan notification).
+      const refundJobs = h.queueAdds.filter((j) => j.queue === 'payment' && j.name === 'refund');
+      expect(refundJobs.length).toBe(1);
+      expect(refundJobs[0].payload).toMatchObject({ orderId: o.id, amount: 50000 });
+      // Tidak boleh ada job refund yang nyasar ke queue notification.
+      expect(h.queueAdds.filter((j) => j.queue === 'notification')).toHaveLength(0);
+    });
+
+    it('TIDAK menambahkan refund job bila order PENDING', async () => {
+      const o = seedOrder({ status: 'PENDING', user_id: 'u1', total: 50000 });
+      await svc.cancel('u1', o.id);
+      // Tidak ada refund job untuk PENDING (belum dibayar).
+      expect(h.queueAdds.filter((j) => j.name === 'refund')).toHaveLength(0);
+    });
+  });
 
 // ═══════════════ reorder (ADR-010) ═══════════════
 

@@ -392,16 +392,16 @@ export class OrderService {
         });
 
         // If PAID, enqueue refund job (async via BullMQ)
-        if (order.status === 'PAID') {
-          const { queues } = await import('../../queue/queues.js');
-          await queues.notification.add('payment-refund', {
-            orderId: order.id,
-            amount: Number(order.total),
-            reason: reason ?? 'Customer cancelled',
-          }).catch((err) => {
-            console.warn('Failed to enqueue refund job:', err);
-          });
-        }
+                if (order.status === 'PAID') {
+                  const { queues } = await import('../../queue/queues.js');
+                  await queues.payment.add('refund', {
+                    orderId: order.id,
+                    amount: Number(order.total),
+                    reason: reason ?? 'Customer cancelled',
+                  }).catch((err) => {
+                    console.warn('Failed to enqueue refund job:', err);
+                  });
+                }
 
         return o;
       });

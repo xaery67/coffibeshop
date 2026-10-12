@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 import { redisCache } from '../config/redis.js';
-import { TooMany } from '../lib/http.js';
+import { ServiceUnavailable } from '../lib/http.js';
 
 /**
  * Rate limiter untuk SSE (TC-REALTIME-INFRA).
@@ -23,7 +23,7 @@ export function sseRateLimit(
         await redisCache.pexpire(key, windowMs);
       }
       
-      if (current > maxRequests) {
+      if (current >= maxRequests) {
         const ttlMs = await redisCache.pttl(key);
         const retryAfter = Math.ceil((ttlMs > 0 ? ttlMs : windowMs) / 1000);
         
@@ -35,7 +35,7 @@ export function sseRateLimit(
           'Retry-After': String(retryAfter),
         });
         
-        return next(TooMany(`Rate limit exceeded. Try again in ${retryAfter}s`));
+        return next(ServiceUnavailable(`Rate limit exceeded. Try again in ${retryAfter}s`));
       }
       
       // Set headers for successful requests

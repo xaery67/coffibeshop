@@ -21,6 +21,7 @@ export const Forbidden = (m = 'Forbidden') => new AppError(403, 'FORBIDDEN', m);
 export const NotFound = (m = 'Not found') => new AppError(404, 'NOT_FOUND', m);
 export const Conflict = (m: string) => new AppError(409, 'CONFLICT', m);
 export const TooMany = (m = 'Too many requests') => new AppError(429, 'RATE_LIMITED', m);
+export const ServiceUnavailable = (m = 'Service unavailable') => new AppError(503, 'SERVICE_UNAVAILABLE', m);
 export const InternalServerError = (m = 'Internal server error') => new AppError(500, 'INTERNAL_ERROR', m);
 export const NotImplemented = (m = 'Not implemented') => new AppError(501, 'NOT_IMPLEMENTED', m);
 
