@@ -28,17 +28,22 @@ const SIZES: Record<Size, string> = {
   lg: 'min-h-[48px] px-6 text-base',
 };
 
-export function Button({
+/**
+ * Kelas tombol reusable — dipakai `Button` DAN elemen non-`<button>`
+ * (mis. `<Link>`), agar tidak ada nested interactive `<a><button>` (audit T5).
+ */
+export function buttonClasses({
   variant = 'primary',
   size = 'md',
-  loading = false,
   block = false,
-  disabled,
   className = '',
-  children,
-  ...rest
-}: ButtonProps) {
-  const classes = [
+}: {
+  variant?: Variant;
+  size?: Size;
+  block?: boolean;
+  className?: string;
+} = {}): string {
+  return [
     'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition',
     'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
     'disabled:cursor-not-allowed disabled:opacity-50',
@@ -49,6 +54,19 @@ export function Button({
   ]
     .filter(Boolean)
     .join(' ');
+}
+
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  loading = false,
+  block = false,
+  disabled,
+  className = '',
+  children,
+  ...rest
+}: ButtonProps) {
+  const classes = buttonClasses({ variant, size, block, className });
 
   return (
     <button className={classes} disabled={disabled || loading} aria-busy={loading || undefined} {...rest}>

@@ -19,9 +19,9 @@ export function Card({
   children,
   ...rest
 }: CardProps) {
-  const base = 'rounded-card border border-brand-100 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.06)]';
+  const base = 'rounded-card border border-brand-100 bg-white shadow-elev1';
   const interactiveCls = interactive
-    ? 'transition hover:border-brand-500/40 hover:shadow-[0_4px_16px_rgba(0,0,0,0.08)] focus-within:border-brand-500/40'
+    ? 'transition hover:border-brand-500/40 hover:shadow-hover focus-within:border-brand-500/40'
     : '';
   const variantCls = variant === 'kpi' ? 'p-5' : 'p-4';
 

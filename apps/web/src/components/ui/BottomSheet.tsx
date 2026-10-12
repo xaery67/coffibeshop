@@ -115,7 +115,7 @@ export function BottomSheet({ open, onClose, snap = 'full', title, footer, child
           transition: dragStartY.current === null ? 'transform 250ms ease' : 'none',
           paddingBottom: 'env(safe-area-inset-bottom)',
         }}
-        className="absolute inset-x-0 bottom-0 mx-auto flex max-w-2xl flex-col rounded-t-2xl bg-white shadow-[0_-4px_16px_rgba(0,0,0,0.10)] outline-none"
+        className="absolute inset-x-0 bottom-0 mx-auto flex max-w-2xl flex-col rounded-t-2xl bg-white shadow-elev2 outline-none"
       >
         <div
           className="flex min-h-[44px] shrink-0 cursor-grab touch-none items-center justify-center"
@@ -132,7 +132,7 @@ export function BottomSheet({ open, onClose, snap = 'full', title, footer, child
             }
           }}
         >
-          <span className="h-1 w-9 rounded-full bg-neutral-300" aria-hidden="true" />
+          <span className="h-1 w-9 rounded-full bg-border" aria-hidden="true" />
         </div>
 
         {title && (

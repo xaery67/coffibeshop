@@ -1,8 +1,10 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useCartStore, type Fulfillment } from '../stores/cart.store.js';
 import { useConfig } from '../hooks/useConfig.js';
 import { computeTotals, formatIDR, lineSubtotal } from '../lib/pricing.js';
-import { Button } from '../components/ui/Button.js';
+import { buttonClasses } from '../components/ui/Button.js';
+import { Chip, ChipGroup } from '../components/ui/Chip.js';
+import { CartSummary } from '../components/domain/CartSummary.js';
 import { EmptyState } from '../components/domain/States.js';
 import { QuantityStepper } from '../components/domain/QuantityStepper.js';
 
@@ -14,6 +16,7 @@ const FULFILLMENT_LABELS: { value: Fulfillment; label: string }[] = [
 
 /** Cart (PRD-FRONTEND §2.3-D) — memakai PricingEngine (satu sumber harga, §6.4). */
 export function CartPage() {
+  const navigate = useNavigate();
   const { items, setQty, remove, fulfillment, setFulfillment } = useCartStore();
   const { data: config } = useConfig();
 
@@ -30,15 +33,15 @@ export function CartPage() {
 
   return (
     <section className="space-y-4">
-      <h1 className="text-xl font-bold text-text">Keranjang</h1>
+      <h1 className="text-h1 text-text">Keranjang</h1>
 
       {items.length === 0 ? (
         <EmptyState
           title="Keranjang masih kosong"
           description="Yuk pilih kopi favoritmu dulu."
           action={
-            <Link to="/menu">
-              <Button>Lihat Menu</Button>
+            <Link to="/menu" className={buttonClasses({ variant: 'primary' })}>
+              Lihat Menu
             </Link>
           }
         />
@@ -50,22 +53,31 @@ export function CartPage() {
                 <div className="flex-1">
                   <p className="font-medium text-text">{i.product_name}</p>
                   {(i.variant || i.options.length > 0) && (
-                    <p className="mt-0.5 text-xs text-text-muted">
+                    <p className="mt-1 text-caption text-text-muted">
                       {[i.variant?.name, ...i.options.map((o) => o.name)].filter(Boolean).join(' · ')}
                     </p>
                   )}
-                  {i.note && <p className="mt-0.5 text-xs italic text-text-muted">“{i.note}”</p>}
-                  <p className="mt-1 tabular-nums text-sm text-text-muted">
-                    {formatIDR(i.unit_price)} × {i.qty} = <strong>{formatIDR(lineSubtotal({
-                      basePrice: i.base_price,
-                      variantDelta: i.variant?.priceAdjustment ?? 0,
-                      options: i.options.map((o) => ({ priceAdjustment: o.priceAdjustment, qty: 1 })),
-                      quantity: i.qty,
-                    }))}</strong>
+                  {i.note && <p className="mt-1 text-caption italic text-text-muted">“{i.note}”</p>}
+                  <p className="mt-2 tabular-nums text-sm text-text-muted">
+                    {formatIDR(i.unit_price)} × {i.qty} ={' '}
+                    <strong>
+                      {formatIDR(
+                        lineSubtotal({
+                          basePrice: i.base_price,
+                          variantDelta: i.variant?.priceAdjustment ?? 0,
+                          options: i.options.map((o) => ({ priceAdjustment: o.priceAdjustment, qty: 1 })),
+                          quantity: i.qty,
+                        }),
+                      )}
+                    </strong>
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-2">
-                  <QuantityStepper value={i.qty} onChange={(qty) => setQty(i.id, qty)} label={`Kuantitas ${i.product_name}`} />
+                  <QuantityStepper
+                    value={i.qty}
+                    onChange={(qty) => setQty(i.id, qty)}
+                    label={`Kuantitas ${i.product_name}`}
+                  />
                   <button
                     type="button"
                     onClick={() => remove(i.id)}
@@ -80,52 +92,35 @@ export function CartPage() {
 
           <fieldset className="rounded-card border border-brand-100 bg-white p-4">
             <legend className="px-1 text-sm font-semibold text-text">Metode pengambilan</legend>
-            <div className="flex flex-wrap gap-2">
+            <ChipGroup role="radiogroup" label="Metode pengambilan" className="mt-2">
               {FULFILLMENT_LABELS.map((f) => (
-                <button
+                <Chip
                   key={f.value}
-                  type="button"
                   role="radio"
                   aria-checked={fulfillment === f.value}
+                  selected={fulfillment === f.value}
                   onClick={() => setFulfillment(f.value)}
-                  className={[
-                    'min-h-[44px] rounded-pill border px-4 text-sm transition',
-                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
-                    fulfillment === f.value
-                      ? 'border-brand bg-brand-50 font-semibold text-brand'
-                      : 'border-border bg-white text-text hover:border-brand-500/50',
-                  ].join(' ')}
                 >
                   {f.label}
-                </button>
+                </Chip>
               ))}
-            </div>
+            </ChipGroup>
+            {fulfillment === 'delivery' && (
+              <p className="mt-3 text-sm text-text-muted">
+                🛵 Ongkir flat {formatIDR(config?.shipping_flat_fee ?? 0)} · alamat diisi saat checkout.
+              </p>
+            )}
           </fieldset>
 
-          <div className="space-y-1 rounded-card border border-brand-100 bg-white p-4 text-sm tabular-nums" aria-live="polite">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{formatIDR(totals.subtotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Pajak</span>
-              <span>{formatIDR(totals.tax)}</span>
-            </div>
-            {totals.deliveryFee > 0 && (
-              <div className="flex justify-between">
-                <span>Ongkir</span>
-                <span>{formatIDR(totals.deliveryFee)}</span>
-              </div>
-            )}
-            <div className="flex justify-between border-t border-brand-100 pt-1 font-bold text-brand">
-              <span>Total</span>
-              <span>{formatIDR(totals.grandTotal)}</span>
-            </div>
-          </div>
+          <CartSummary totals={totals} />
 
-          <Button block size="lg">
+          <button
+            type="button"
+            onClick={() => navigate('/checkout')}
+            className={buttonClasses({ variant: 'primary', size: 'lg', block: true })}
+          >
             Checkout
-          </Button>
+          </button>
         </>
       )}
     </section>

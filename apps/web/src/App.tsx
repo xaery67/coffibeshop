@@ -13,6 +13,12 @@ const ProductDetailPage = lazy(() =>
   import('./routes/ProductDetailPage.js').then((m) => ({ default: m.ProductDetailPage })),
 );
 const CartPage = lazy(() => import('./routes/CartPage.js').then((m) => ({ default: m.CartPage })));
+const CheckoutPage = lazy(() =>
+  import('./routes/CheckoutPage.js').then((m) => ({ default: m.CheckoutPage })),
+);
+const PaymentPage = lazy(() =>
+  import('./routes/PaymentPage.js').then((m) => ({ default: m.PaymentPage })),
+);
 const TrackPage = lazy(() => import('./routes/TrackPage.js').then((m) => ({ default: m.TrackPage })));
 const AdminPage = lazy(() => import('./routes/AdminPage.js').then((m) => ({ default: m.AdminPage })));
 
@@ -46,6 +52,8 @@ export function App() {
             <Route path="/menu" element={<MenuPage />} />
             <Route path="/product/:id" element={<ProductDetailPage />} />
             <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/payment/:orderId" element={<PaymentPage />} />
             <Route path="/track/:token?" element={<TrackPage />} />
             <Route path="/admin" element={<AdminPage />} />
             {/* Placeholder route lain (Sprint berikutnya) — arahkan ke halaman terkait. */}

@@ -11,6 +11,7 @@ import {
 } from '../lib/pricing.js';
 import { useCartStore, type CartOptionSnapshot } from '../stores/cart.store.js';
 import { Button } from '../components/ui/Button.js';
+import { Chip, ChipGroup } from '../components/ui/Chip.js';
 import { BottomSheet } from '../components/ui/BottomSheet.js';
 import { PriceText } from '../components/domain/PriceText.js';
 import { OptionChipGroup } from '../components/domain/OptionChipGroup.js';
@@ -137,33 +138,29 @@ export function ProductDetailPage() {
       {variants.length > 0 && (
         <fieldset className="space-y-2">
           <legend className="text-sm font-semibold text-text">Varian</legend>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Varian">
+          <ChipGroup role="radiogroup" label="Varian">
             {variants.map((v) => {
               const soldOut = v.stock_quantity !== null && v.stock_quantity <= 0;
               const active = selection.variantId === v.id;
               return (
-                <button
+                <Chip
                   key={v.id}
-                  type="button"
                   role="radio"
                   aria-checked={active}
                   disabled={soldOut}
+                  selected={active}
                   onClick={() => setSelection({ ...selection, variantId: v.id })}
-                  className={[
-                    'inline-flex min-h-[44px] items-center gap-1.5 rounded-pill border px-3 py-1.5 text-sm transition',
-                    'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
-                    active ? 'border-brand bg-brand-50 font-semibold text-brand' : 'border-border bg-white text-text',
-                    soldOut ? 'cursor-not-allowed opacity-50 line-through' : 'hover:border-brand-500/50',
-                  ].join(' ')}
+                  className={soldOut ? 'line-through' : ''}
                 >
-                  {active && <span aria-hidden="true">✓</span>}
                   {v.name}
-                  {v.price_delta > 0 && <span className="tabular-nums text-text-muted">+{formatIDR(v.price_delta)}</span>}
-                  {soldOut && <span className="text-xs">(habis)</span>}
-                </button>
+                  {v.price_delta > 0 && (
+                    <span className="tabular-nums text-text-muted">+{formatIDR(v.price_delta)}</span>
+                  )}
+                  {soldOut && <span className="text-caption text-text-muted">(habis)</span>}
+                </Chip>
               );
             })}
-          </div>
+          </ChipGroup>
         </fieldset>
       )}
 
@@ -216,7 +213,13 @@ export function ProductDetailPage() {
         {/* Gallery */}
         <div className="aspect-[4/3] w-full overflow-hidden rounded-card bg-brand-50">
           {product.image_url ? (
-            <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
+            <img
+              src={product.image_url}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover"
+            />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-6xl" aria-hidden="true">
               ☕
