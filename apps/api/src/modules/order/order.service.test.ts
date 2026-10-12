@@ -1,0 +1,421 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+/**
+ * order.service — unit test (issue #18; PRD-QA F-005b cancel, F-006 reorder, ADR-008 track).
+ * Prisma & Redis di-mock in-memory; SSE di-stub. Fokus: state machine transisi status,
+ * customer cancel (PENDING/PAID), reorder, tracking anti-IDOR, dan atomic checkout.
+ */
+
+const h = vi.hoisted(() => ({
+  orders: [] as any[],
+  items: [] as any[],
+  statusLogs: [] as any[],
+  loyalty: [] as any[],
+  products: [] as any[],
+  vouchers: [] as any[],
+  store: new Map<string, string>(),
+  events: [] as any[],
+}));
+
+vi.mock('../../config/redis.js', () => ({
+  redisCache: {
+    get: async (k: string) => h.store.get(k) ?? null,
+    setex: async (k: string, _ttl: number, v: string) => void h.store.set(k, v),
+    del: async (k: string) => void h.store.delete(k),
+    quit: async () => undefined,
+  },
+  redisQueue: { quit: async () => undefined },
+  pingRedis: async () => true,
+}));
+
+vi.mock('./sse.controller.js', () => ({
+  publishOrderEvent: (key: string, payload: any) => void h.events.push({ key, payload }),
+  streamOrderEvents: () => undefined,
+}));
+
+// Prisma mock: cukup model yang dipakai order.service.
+vi.mock('../../config/prisma.js', () => {
+  const tx = {
+    order: {
+      create: async ({ data }: any) => {
+        const o = { id: `order-${h.orders.length + 1}`, created_at: new Date(), updated_at: new Date(), ...data };
+        h.orders.push(o);
+        return o;
+      },
+      update: async ({ where, data }: any) => {
+        const o = h.orders.find((x) => x.id === where.id);
+        Object.assign(o, data);
+        return o;
+      },
+    },
+    orderStatusLog: {
+      create: async ({ data }: any) => {
+        h.statusLogs.push(data);
+        return data;
+      },
+    },
+    orderItem: {
+      create: async ({ data }: any) => {
+        h.items.push(data);
+        return data;
+      },
+    },
+    loyaltyPoint: {
+      create: async ({ data }: any) => {
+        h.loyalty.push(data);
+        return data;
+      },
+    },
+    product: {
+      findMany: async ({ where }: any = {}) => {
+        const ids: string[] = where?.id?.in ?? [];
+        return h.products.filter((p) => ids.includes(p.id));
+      },
+    },
+  };
+
+  const prisma = {
+    product: {
+      findMany: async ({ where }: any = {}) => {
+        const ids: string[] = where?.id?.in ?? [];
+        return h.products.filter((p) => ids.includes(p.id));
+      },
+    },
+    order: {
+      create: tx.order.create,
+      update: tx.order.update,
+      findUnique: async ({ where }: any) => {
+        if (where.id) return h.orders.find((o) => o.id === where.id) ?? null;
+        if (where.tracking_token) return h.orders.find((o) => o.tracking_token === where.tracking_token) ?? null;
+        return null;
+      },
+      findMany: async ({ where }: any = {}) => {
+        let rows = [...h.orders];
+        if (where?.user_id) rows = rows.filter((o) => o.user_id === where.user_id);
+        if (where?.status?.in) rows = rows.filter((o) => where.status.in.includes(o.status));
+        return rows;
+      },
+      count: async ({ where }: any = {}) => h.orders.filter((o) => !where?.user_id || o.user_id === where.user_id).length,
+    },
+    orderStatusLog: tx.orderStatusLog,
+    voucher: {
+      findFirst: async ({ where }: any) => h.vouchers.find((v) => v.code === where.code && v.is_active) ?? null,
+    },
+    loyaltyPoint: {
+      aggregate: async ({ where }: any) => {
+        const rows = h.loyalty.filter((l) => l.user_id === where.user_id && l.type === where.type);
+        return { _sum: { points: rows.reduce((s, r) => s + r.points, 0) } };
+      },
+    },
+    $transaction: async (fn: any) => fn(tx),
+  };
+  return { prisma };
+});
+
+import { OrderService } from './order.service.js';
+import { writeCart, memberKey, writeCartMeta } from './cart.service.js';
+
+const svc = new OrderService();
+
+const LATTE = {
+  id: 'p-latte',
+  name: 'Latte',
+  base_price: '27000',
+  is_active: true,
+  is_available: true,
+  variants: [{ id: 'v-lrg', name: 'Large', price_delta: '5000', stock_quantity: 50 }],
+  options: [{ id: 'opt-shot', values: [{ id: 'shot-yes', value: 'Extra Shot', price_adjustment: '5000' }] }],
+};
+
+function seedOrder(over: Partial<any> = {}) {
+  const o = {
+    id: `order-${h.orders.length + 1}`,
+    order_number: 'CS-TEST',
+    user_id: 'u1',
+    status: 'PENDING',
+    total: 82140,
+    subtotal: 74000,
+    tax: 8140,
+    shipping_fee: 0,
+    discount: 0,
+    points_discount: 0,
+    tracking_token: 'tok-' + h.orders.length,
+    created_at: new Date(),
+    updated_at: new Date(),
+    items: [],
+    ...over,
+  };
+  h.orders.push(o);
+  return o;
+}
+
+beforeEach(() => {
+  h.orders = [];
+  h.items = [];
+  h.statusLogs = [];
+  h.loyalty = [];
+  h.products = [LATTE];
+  h.vouchers = [];
+  h.store.clear();
+  h.events = [];
+});
+
+// ═══════════════ getCart / addItem / updateItem / removeItem ═══════════════
+
+describe('cart via OrderService', () => {
+  it('getCart guest mengembalikan item ter-harga', async () => {
+    await writeCart(memberKey('u1'), []);
+    const r = await svc.getCart('u1');
+    expect(r.items).toEqual([]);
+  });
+
+  it('addItem menambah & men-harga (golden 37.000)', async () => {
+    const r = await svc.addItem('u1', undefined, {
+      product_id: 'p-latte',
+      variant_id: 'v-lrg',
+      selected_options: ['shot-yes'],
+      quantity: 1,
+    });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].unit_price).toBe(37000);
+  });
+
+  it('updateItem qty + removeItem', async () => {
+    const added = await svc.addItem('u1', undefined, { product_id: 'p-latte', option_ids: [], qty: 1 });
+    const id = added.items[0].id;
+    const upd = await svc.updateItem('u1', undefined, id, { qty: 3 });
+    expect(upd.items[0].qty).toBe(3);
+    const rem = await svc.removeItem('u1', undefined, id);
+    expect(rem.items).toHaveLength(0);
+  });
+
+  it('updateItem id tidak ada → 404', async () => {
+    await expect(svc.updateItem('u1', undefined, 'nope', { qty: 2 })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ═══════════════ checkout (atomic) ═══════════════
+
+describe('checkout', () => {
+  it('cart kosong → 400', async () => {
+    await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('membuat order PENDING + tracking_token + log status awal', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', variant_id: 'v-lrg', option_ids: ['shot-yes'], qty: 2 }]);
+    const r = await svc.checkout('u1', undefined, { fulfillment_type: 'pickup', payment_method: 'qris' });
+    expect(r.status).toBe('PENDING');
+    expect(r.order_id).toBeTruthy();
+    expect(r.tracking_token).toBeTruthy();
+    expect(h.statusLogs.some((l) => l.to_status === 'PENDING')).toBe(true);
+    expect(h.items).toHaveLength(1);
+    expect(h.items[0].unit_price).toBe(37000);
+    expect(h.items[0].line_total).toBe(74000);
+  });
+
+  it('GOLDEN total 82.140 (2× Large+ExtraShot) tersimpan di order', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', variant_id: 'v-lrg', option_ids: ['shot-yes'], qty: 2 }]);
+    await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+    expect(h.orders[0].subtotal).toBe(74000);
+    expect(h.orders[0].tax).toBe(8140);
+    expect(h.orders[0].total).toBe(82140);
+  });
+
+  it('delivery menambah ongkir flat 10.000', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    await svc.checkout('u1', undefined, { fulfillment_type: 'delivery' });
+    expect(h.orders[0].shipping_fee).toBe(10000);
+  });
+
+  it('item tidak tersedia → 409 Conflict', async () => {
+    h.products = [{ ...LATTE, is_available: false }];
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('menerapkan meta diskon voucher dari Redis', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', variant_id: 'v-lrg', option_ids: ['shot-yes'], qty: 2 }]);
+    await writeCartMeta(memberKey('u1'), { voucher_code: 'WELCOME10', discount: 10000, points_to_redeem: 0, points_discount: 0 });
+    await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+    expect(h.orders[0].discount).toBe(10000);
+    expect(h.orders[0].tax).toBe(7040);
+    expect(h.orders[0].voucher_code).toBe('WELCOME10');
+  });
+
+  it('menukar poin: mencatat loyalty redeemed di dalam transaksi', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    await writeCartMeta(memberKey('u1'), { points_to_redeem: 50, points_discount: 50 });
+    await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+    expect(h.loyalty).toHaveLength(1);
+    expect(h.loyalty[0].type).toBe('redeemed');
+    expect(h.loyalty[0].points).toBe(50);
+  });
+
+  it('mengosongkan cart Redis setelah checkout', async () => {
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+    expect(await (await import('./cart.service.js')).readCart(memberKey('u1'))).toEqual([]);
+  });
+});
+
+// ═══════════════ status machine ═══════════════
+
+describe('updateStatus — state machine kanonik', () => {
+  const valid: [string, string][] = [
+    ['PENDING', 'PAID'],
+    ['PAID', 'CONFIRMED'],
+    ['CONFIRMED', 'BEING_PREPARED'],
+    ['BEING_PREPARED', 'READY'],
+    ['READY', 'COMPLETED'],
+  ];
+
+  for (const [from, to] of valid) {
+    it(`transisi sah ${from} → ${to}`, async () => {
+      const o = seedOrder({ status: from });
+      const r = await svc.updateStatus(o.id, { status: to });
+      expect(r.status).toBe(to);
+      expect(h.statusLogs.at(-1).to_status).toBe(to);
+      expect(h.events.at(-1).payload.status).toBe(to);
+    });
+  }
+
+  const invalid: [string, string][] = [
+    ['PENDING', 'COMPLETED'],
+    ['PENDING', 'READY'],
+    ['COMPLETED', 'PAID'],
+    ['CANCELLED', 'PAID'],
+    ['READY', 'PENDING'],
+  ];
+
+  for (const [from, to] of invalid) {
+    it(`transisi terlarang ${from} → ${to} → 409`, async () => {
+      const o = seedOrder({ status: from });
+      await expect(svc.updateStatus(o.id, { status: to })).rejects.toMatchObject({ status: 409 });
+    });
+  }
+
+  it('order tidak ditemukan → 404', async () => {
+    await expect(svc.updateStatus('tidak-ada', { status: 'PAID' })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('publish event SSE status_change setiap perubahan', async () => {
+    const o = seedOrder({ status: 'PENDING' });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    expect(h.events).toHaveLength(1);
+    expect(h.events[0].payload).toMatchObject({ status: 'PAID' });
+  });
+});
+
+// ═══════════════ customer cancel (ADR-012) ═══════════════
+
+describe('cancel — customer (PENDING/PAID saja)', () => {
+  it('PENDING → CANCELLED (dengan alasan) + audit log + event SSE', async () => {
+    const o = seedOrder({ status: 'PENDING', user_id: 'u1' });
+    const r = await svc.cancel('u1', o.id, 'Salah pesan');
+    expect(r.status).toBe('CANCELLED');
+    expect(r.cancel_reason).toBe('Salah pesan');
+    expect(h.events.at(-1).payload.status).toBe('CANCELLED');
+  });
+
+  it('PAID → CANCELLED diperbolehkan', async () => {
+    const o = seedOrder({ status: 'PAID', user_id: 'u1' });
+    const r = await svc.cancel('u1', o.id);
+    expect(r.status).toBe('CANCELLED');
+  });
+
+  for (const status of ['CONFIRMED', 'BEING_PREPARED', 'READY', 'COMPLETED', 'CANCELLED']) {
+    it(`${status} → TIDAK bisa dibatalkan customer (409)`, async () => {
+      const o = seedOrder({ status, user_id: 'u1' });
+      await expect(svc.cancel('u1', o.id)).rejects.toMatchObject({ status: 409 });
+    });
+  }
+
+  it('IDOR: user lain tidak bisa membatalkan order (403)', async () => {
+    const o = seedOrder({ status: 'PENDING', user_id: 'u1' });
+    await expect(svc.cancel('u-other', o.id)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('order tidak ditemukan → 404', async () => {
+    await expect(svc.cancel('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ═══════════════ reorder (ADR-010) ═══════════════
+
+describe('reorder — 1 klik', () => {
+  it('mengembalikan items order sebagai CartItemDTO', async () => {
+    const o = seedOrder({ user_id: 'u1', items: [{ product_id: 'p-latte', qty: 2, unit_price: 37000 }] });
+    const r = await svc.reorder('u1', o.id);
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].product_id).toBe('p-latte');
+  });
+
+  it('IDOR: user lain tidak bisa reorder order orang lain (403)', async () => {
+    const o = seedOrder({ user_id: 'u1' });
+    await expect(svc.reorder('u-other', o.id)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('order tidak ditemukan → 404', async () => {
+    await expect(svc.reorder('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ═══════════════ tracking (ADR-008, anti-IDOR) ═══════════════
+
+describe('trackByToken — publik via tracking_token', () => {
+  it('token valid → status order (tanpa data sensitif user)', async () => {
+    const o = seedOrder({ tracking_token: 'tok-rahasia', user_id: 'u1', status: 'READY' });
+    const r = await svc.trackByToken('tok-rahasia');
+    expect(r.status).toBe('READY');
+    expect(r.order_number).toBe(o.order_number);
+    expect(r).not.toHaveProperty('user_id');
+    expect(r).not.toHaveProperty('total');
+  });
+
+  it('token tidak valid → 404 (anti-IDOR)', async () => {
+    seedOrder({ tracking_token: 'tok-valid' });
+    await expect(svc.trackByToken('tok-palsu')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ═══════════════ history & queue ═══════════════
+
+describe('history & queue', () => {
+  it('history hanya order milik user + meta paginasi', async () => {
+    seedOrder({ user_id: 'u1' });
+    seedOrder({ user_id: 'u1' });
+    seedOrder({ user_id: 'u2' });
+    const r = await svc.history('u1', {});
+    expect(r.data).toHaveLength(2);
+    expect(r.meta.total).toBe(2);
+  });
+
+  it('queue default status PAID,CONFIRMED', async () => {
+    seedOrder({ status: 'PAID' });
+    seedOrder({ status: 'CONFIRMED' });
+    seedOrder({ status: 'PENDING' });
+    const r = await svc.queue({});
+    expect(r).toHaveLength(2);
+  });
+
+  it('queue menerima filter status eksplisit', async () => {
+    seedOrder({ status: 'PENDING' });
+    const r = await svc.queue({ status: 'PENDING' });
+    expect(r).toHaveLength(1);
+  });
+});
+
+// ═══════════════ detail (IDOR) ═══════════════
+
+describe('detail — anti-IDOR', () => {
+  it('user lain tidak bisa lihat detail order (403)', async () => {
+    const o = seedOrder({ user_id: 'u1' });
+    await expect(svc.detail('u-other', o.id)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('pemilik bisa lihat detail', async () => {
+    const o = seedOrder({ user_id: 'u1' });
+    const r = await svc.detail('u1', o.id);
+    expect(r.id).toBe(o.id);
+  });
+});
