@@ -4,6 +4,7 @@ import { logger } from './config/logger.js';
 import { prisma } from './config/prisma.js';
 import { redisCache, redisQueue, redisPubSub, redisSubscriber } from './config/redis.js';
 import { startWorkers } from './queue/worker.js';
+import { startQueueMonitor } from './queue/monitor.js';
 import { attachOrderQueueWs } from './modules/order/ws.controller.js';
 
 /** Titik masuk — graceful shutdown agar SSE & job tidak terputus (DEVOPS §1.6). */
@@ -12,6 +13,9 @@ async function main() {
 
   // Nyalakan worker BullMQ (in-process untuk MVP; pisah pod saat scale)
   const workers = startWorkers();
+
+  // Monitor queue depth (issue #16) — gauge Prometheus + alert ambang.
+  const queueMonitor = startQueueMonitor();
 
   const server = app.listen(env.API_PORT, () => {
     logger.info(
@@ -30,6 +34,7 @@ async function main() {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'graceful shutdown dimulai');
+    queueMonitor?.stop();
     server.close(async () => {
       await Promise.allSettled([
         ...workers.map((w) => w.close()),

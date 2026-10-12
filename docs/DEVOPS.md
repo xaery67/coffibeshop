@@ -141,8 +141,27 @@ Set secret `STAGING_BASE_URL` (mis. `https://staging.coffibeshop.example`) agar 
 | **Liveness** | `GET /health` (selalu cepat) | `apps/api/src/routes/health.ts` |
 | **Readiness** | `GET /ready` (cek DB + Redis) | `apps/api/src/routes/health.ts` |
 | **Metrics (Prometheus)** | `GET /metrics` (prom-client: default + `http_request_duration_seconds`) | `apps/api/src/observability/metrics.ts` |
+| **Queue depth (BullMQ)** | gauge `bullmq_queue_depth{queue}` + `bullmq_queue_alert{queue}` (0/1) via monitor interval | `apps/api/src/queue/monitor.ts` |
 
 - `/metrics` **tidak** di-log (di-ignore oleh `pino-http`) dan sebaiknya hanya diakses dari jaringan internal / service monitor.
+
+### 7.1 Monitoring queue (issue #16)
+
+`startQueueMonitor()` (dipanggil di `server.ts`) tiap `QUEUE_MONITOR_INTERVAL_MS`
+(default 60s) menghitung `waiting + delayed` per queue dan meng-update dua gauge:
+
+- **`bullmq_queue_depth{queue="payment|notification|loyalty|reporting"}`** — jumlah job menunggu.
+- **`bullmq_queue_alert{queue}`** — `1` bila depth > `QUEUE_ALERT_THRESHOLD` (default **1000**), selain itu `0`.
+
+Bila melewati ambang, server menulis **warn** (rate-limited: hanya saat pertama
+melewati atau saat depth naik lebih tinggi — tidak spam). Bila Redis belum
+dikonfigurasi, monitor no-op (tidak crash).
+
+> **Rencana HPA:** pod worker akan di-scale otomatis berdasarkan `bullmq_queue_depth`
+> (KEDA/HPA custom metric) — lihat `PRD-BACKEND-DEVOPS.md` §1.5.
+>
+> Verifikasi konektivitas Upstash: `node scripts/verify-upstash.mjs` (lihat `SETUP.md` §4.1).
+
 - **Rencana lanjutan (belum di scope #17):** OpenTelemetry tracing, Grafana/Loki, alerting — lihat `PRD-BACKEND-DEVOPS.md` §4.
 
 ---
