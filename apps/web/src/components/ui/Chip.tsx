@@ -20,6 +20,9 @@ export function chipClasses({
     'focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]',
     selected ? 'border-brand bg-brand-50 font-semibold text-brand' : 'border-border bg-white text-text',
     disabled ? 'cursor-not-allowed opacity-50' : 'hover:border-brand-500/50',
+    // Tanda ✓ terpilih lewat CSS (::before), bukan node teks: aksesibilitas tetap
+    // dibawa `aria-checked`, sementara `textContent` chip bersih = label saja.
+    selected && "before:content-['✓'] before:text-brand",
     className,
   ]
     .filter(Boolean)
@@ -39,11 +42,6 @@ export function Chip({ selected = false, disabled = false, className = '', child
       className={chipClasses({ selected, disabled, className })}
       {...rest}
     >
-      {selected && (
-        <span aria-hidden="true" className="text-brand">
-          ✓
-        </span>
-      )}
       {children}
     </button>
   );
