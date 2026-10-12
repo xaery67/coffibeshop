@@ -11,6 +11,7 @@ import {
   ResetPasswordInput,
   ChangePasswordInput,
   UpdateProfileInput,
+  AddressInput,
 } from '@coffibeshop/shared';
 
 export const authRouter = Router();
@@ -131,5 +132,43 @@ authRouter.post(
   validate(ResetPasswordInput),
   asyncHandler(async (req, res) => {
     sendOk(res, await service.resetPassword(req.body.token, req.body.new_password));
+  }),
+);
+
+/** GET /api/v1/auth/me/addresses — daftar alamat pengguna. */
+authRouter.get(
+  '/me/addresses',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    sendOk(res, await service.getAddresses((req as any).user.id));
+  }),
+);
+
+/** POST /api/v1/auth/me/addresses — tambah alamat. */
+authRouter.post(
+  '/me/addresses',
+  requireAuth,
+  validate(AddressInput),
+  asyncHandler(async (req, res) => {
+    sendOk(res, await service.createAddress((req as any).user.id, req.body), 201);
+  }),
+);
+
+/** PUT /api/v1/auth/me/addresses/:id — update alamat. */
+authRouter.put(
+  '/me/addresses/:id',
+  requireAuth,
+  validate(AddressInput),
+  asyncHandler(async (req, res) => {
+    sendOk(res, await service.updateAddress((req as any).user.id, req.params.id, req.body));
+  }),
+);
+
+/** DELETE /api/v1/auth/me/addresses/:id — hapus alamat. */
+authRouter.delete(
+  '/me/addresses/:id',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    sendOk(res, await service.deleteAddress((req as any).user.id, req.params.id));
   }),
 );

@@ -75,20 +75,45 @@ vi.mock('../../config/prisma.js', () => {
   };
 
   const prisma = {
-    product: {
-      findMany: async ({ where }: any = {}) => {
-        const ids: string[] = where?.id?.in ?? [];
-        return h.products.filter((p) => ids.includes(p.id));
+      product: {
+        findMany: async ({ where }: any = {}) => {
+          const ids: string[] = where?.id?.in ?? [];
+          return h.products.filter((p) => ids.includes(p.id));
+        },
+        findUnique: async ({ where }: any = {}) => {
+          if (!where?.id) return null;
+          return h.products.find((p) => p.id === where.id) ?? null;
+        },
       },
-    },
     order: {
-      create: tx.order.create,
-      update: tx.order.update,
-      findUnique: async ({ where }: any) => {
-        if (where.id) return h.orders.find((o) => o.id === where.id) ?? null;
-        if (where.tracking_token) return h.orders.find((o) => o.tracking_token === where.tracking_token) ?? null;
-        return null;
-      },
+          create: tx.order.create,
+          update: tx.order.update,
+          findUnique: async ({ where, include }: any) => {
+                                  if (where.id) {
+                                    const order = h.orders.find((o) => o.id === where.id) ?? null;
+                                    if (order && include?.items) {
+                                      // Populate items with product details
+                                      const items = h.items.filter((i) => i.order_id === order.id);
+                                      // Enrich items with product data
+                                      const enrichedItems = items.map(item => {
+                                        const product = h.products.find(p => p.id === item.product_id);
+                                        return {
+                                          ...item,
+                                          product: product ? {
+                                            ...product,
+                                            variants: product.variants ?? [],
+                                            options: product.options ?? [],
+                                          } : null,
+                                          variant: item.variant_id ? h.products.flatMap(p => p.variants ?? []).find(v => v.id === item.variant_id) ?? null : null,
+                                        };
+                                      });
+                                      return { ...order, items: enrichedItems };
+                                    }
+                                    return order;
+                                  }
+                                  if (where.tracking_token) return h.orders.find((o) => o.tracking_token === where.tracking_token) ?? null;
+                                  return null;
+                                },
       findMany: async ({ where }: any = {}) => {
         let rows = [...h.orders];
         if (where?.user_id) rows = rows.filter((o) => o.user_id === where.user_id);
@@ -146,6 +171,24 @@ function seedOrder(over: Partial<any> = {}) {
     ...over,
   };
   h.orders.push(o);
+  
+  // Also seed items into h.items for reorder test
+  if (over.items?.length) {
+    for (const item of over.items) {
+      h.items.push({
+        id: `item-${h.items.length + 1}`,
+        order_id: o.id,
+        product_id: item.product_id ?? 'p-latte',
+        variant_id: item.variant_id ?? null,
+        qty: item.qty ?? 1,
+        unit_price: item.unit_price ?? 37000,
+        line_total: (item.unit_price ?? 37000) * (item.qty ?? 1),
+        options: item.options ?? null,
+        notes: item.notes ?? null,
+      });
+    }
+  }
+  
   return o;
 }
 
