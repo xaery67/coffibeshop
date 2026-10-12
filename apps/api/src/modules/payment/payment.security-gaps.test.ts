@@ -1,20 +1,51 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { createHash, timingSafeEqual } from 'node:crypto';
 
 /**
- * Payment — SPESIFIKASI KEAMANAN yang BELUM diimplementasikan (issue #18).
+ * Payment — REGRESSION GUARD keamanan (issue #18, diperbarui setelah #7 mendarat).
  *
- * Modul payment di branch ini masih scaffold; dua kontrol kritis berikut belum ada:
- *   1. Verifikasi signature webhook  (Midtrans: sha512(order_id+status_code+gross_amount+server_key); Xendit: header x-callback-token)
- *   2. Idempotency                    (header `Idempotency-Key` untuk initiate; `transaction_id` untuk webhook)
+ * Dua kontrol kritis kini NYATA dan diuji di sini:
+ *   1. Verifikasi signature webhook  (Midtrans: sha512(order_id+status_code+gross_amount+server_key))
+ *   2. Idempotency                    (`Idempotency-Key` untuk initiate; `transaction_id` untuk webhook)
  *
- * Strategi: bagian "reference algorithm" RUNNABLE (mengunci algoritma yang benar agar
- * backend engineer punya kontrak pasti). Bagian route-level di-`describe.skip` dan
- * HANYA diaktifkan (hapus `.skip`) setelah gateway mendarat — saat itu test ini
- * menjadi regression guard sungguhan.
+ * Bagian "reference algorithm" RUNNABLE (mengunci algoritma). Bagian route-level
+ * memakai HTTP harness offline + provider Midtrans/Prisma di-mock — TIDAK memanggil
+ * jaringan nyata. Sebelumnya blok route-level di-`skip` (menunggu gateway); kini aktif.
  *
- * Lihat docs/QA-RELEASE-GATE.md → "Known Gaps / Bug yang dilaporkan".
+ * Lihat docs/QA-RELEASE-GATE.md.
  */
+
+// Env kredensial Midtrans diset sebelum env.ts dievaluasi.
+const ENV = vi.hoisted(() => {
+  process.env.MIDTRANS_SERVER_KEY = 'SB-Mid-server-TESTKEY';
+  process.env.MIDTRANS_CLIENT_KEY = 'SB-Mid-client-TESTKEY';
+  process.env.MIDTRANS_IS_PRODUCTION = 'false';
+  return { serverKey: 'SB-Mid-server-TESTKEY' };
+});
+
+const db = vi.hoisted(() => ({
+  payments: [] as any[],
+  idempotency: new Map<string, any>(),
+  orders: [] as any[],
+  logs: [] as any[],
+}));
+
+vi.mock('midtrans-client', () => {
+  class Snap {
+    async createTransaction() {
+      return {
+        token: 'snap-token-123',
+        redirect_url: 'https://app.sandbox.midtrans.com/snap/v2/vtweb/snap-token-123',
+      };
+    }
+  }
+  class CoreApi {
+    async getTransactionStatus() {
+      return { transaction_status: 'settlement' };
+    }
+  }
+  return { default: { Snap, CoreApi } };
+});
 
 vi.mock('../../config/redis.js', () => ({
   redisCache: {
@@ -26,6 +57,60 @@ vi.mock('../../config/redis.js', () => ({
   redisQueue: { quit: async () => undefined },
   pingRedis: async () => true,
 }));
+
+vi.mock('../../config/prisma.js', () => {
+  const tx = {
+    order: {
+      update: async ({ where, data }: any) => {
+        const o = db.orders.find((x) => x.id === where.id);
+        if (o) Object.assign(o, data);
+        return o;
+      },
+    },
+    orderStatusLog: {
+      create: async ({ data }: any) => {
+        db.logs.push(data);
+        return data;
+      },
+    },
+  };
+  return {
+    prisma: {
+      paymentIdempotency: {
+        findUnique: async ({ where }: any) => db.idempotency.get(where.idempotency_key) ?? null,
+        create: async ({ data }: any) => {
+          db.idempotency.set(data.idempotency_key, data);
+          return data;
+        },
+      },
+      payment: {
+        findUnique: async ({ where }: any) =>
+          db.payments.find((p) => p.transaction_id === where.transaction_id) ?? null,
+        create: async ({ data }: any) => {
+          db.payments.push(data);
+          return data;
+        },
+      },
+      order: {
+        findUnique: async ({ where }: any) => {
+          const o = db.orders.find((x) => x.id === where.id);
+          if (!o) return null;
+          return { ...o, payments: db.payments.filter((p) => p.order_id === o.id) };
+        },
+      },
+      orderStatusLog: {
+        create: async ({ data }: any) => {
+          db.logs.push(data);
+          return data;
+        },
+      },
+      $transaction: async (fn: any) => fn(tx),
+    },
+  };
+});
+
+import { paymentRouter } from './payment.routes.js';
+import { startServer, mountApp, expectOk, expectError, type TestServer } from '../../../test/harness.js';
 
 // ─────────────────────────── REFERENCE ALGORITHM (runnable) ───────────────────────────
 
@@ -78,7 +163,6 @@ describe('REFERENCE: algoritma signature Midtrans (spec untuk implementasi)', ()
   });
 
   it('cocok dengan nilai sha512 yang dihitung manual', () => {
-    // Cross-check independen: hitung ulang dengan createHash langsung.
     const manual = createHash('sha512')
       .update('CS-ABC123' + '200' + '82140.00' + 'SB-Mid-server-TESTKEY')
       .digest('hex');
@@ -93,36 +177,146 @@ describe('REFERENCE: algoritma signature Midtrans (spec untuk implementasi)', ()
   });
 });
 
-// ─────────────────────────── ROUTE-LEVEL SPEC (aktifkan setelah gateway ada) ───────────────────────────
+// ─────────────────────────── ROUTE-LEVEL REGRESSION GUARD ───────────────────────────
 
-describe.skip('[PENDING IMPL] webhook signature enforcement', () => {
-  it('menolak signature tidak valid → 401 UNAUTHORIZED', async () => {
-    // const res = await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
-    //   body: { order_id, status_code, gross_amount, signature_key: 'salah', transaction_id },
-    // });
-    // expect(res.status).toBe(401);
-    expect(true).toBe(true);
+let srv: TestServer;
+const ORDER_ID = '11111111-1111-4111-8111-111111111111';
+const GROSS = '82140.00';
+
+function sign(orderId: string, statusCode: string, gross: string): string {
+  return createHash('sha512')
+    .update(`${orderId}${statusCode}${gross}${ENV.serverKey}`)
+    .digest('hex');
+}
+
+beforeAll(async () => {
+  const app = await mountApp([{ path: '/api/v1/payments', router: paymentRouter }]);
+  srv = await startServer(app);
+});
+
+afterAll(async () => {
+  await srv?.close();
+});
+
+beforeEach(() => {
+  db.payments.length = 0;
+  db.orders.length = 0;
+  db.logs.length = 0;
+  db.idempotency.clear();
+});
+
+describe('webhook signature enforcement (Midtrans)', () => {
+  it('menolak payload TANPA signature_key → 400 Missing signature_key', async () => {
+    const res = await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
+      body: { order_id: ORDER_ID, transaction_id: 'trx-x', transaction_status: 'settlement' },
+    });
+    expect(res.status).toBe(400);
+    expect(expectError(res.json).message).toMatch(/Missing signature_key/i);
   });
 
-  it('menerima signature valid (dihitung dengan server key) → 200', async () => {
-    expect(true).toBe(true);
+  it('menolak signature TIDAK valid → 400 Invalid signature', async () => {
+    const res = await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
+      body: {
+        order_id: ORDER_ID,
+        status_code: '200',
+        gross_amount: GROSS,
+        transaction_id: 'trx-x',
+        transaction_status: 'settlement',
+        signature_key: 'a'.repeat(128),
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(expectError(res.json).message).toMatch(/Invalid signature/i);
   });
 
-  it('Xendit: menolak callback tanpa header x-callback-token yang cocok → 401', async () => {
-    expect(true).toBe(true);
+  it('menerima signature VALID (sha512 server key) → 200', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    const res = await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
+      body: {
+        order_id: ORDER_ID,
+        status_code: '200',
+        gross_amount: GROSS,
+        transaction_id: 'trx-valid',
+        transaction_status: 'settlement',
+        signature_key: sign(ORDER_ID, '200', GROSS),
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(expectOk(res.json).received).toBe(true);
+  });
+
+  it('Xendit (belum dikonfigurasi) → 404 NOT_FOUND (failover skeleton)', async () => {
+    const res = await srv.request('POST', '/api/v1/payments/webhook/xendit', {
+      body: { id: 'xnd-1', status: 'PAID' },
+      headers: { 'x-callback-token': 'whatever' },
+    });
+    expect(res.status).toBe(404);
+    expect(expectError(res.json).code).toBe('NOT_FOUND');
   });
 });
 
-describe.skip('[PENDING IMPL] idempotency', () => {
-  it('initiate: Idempotency-Key sama → respons identik (tidak membuat sesi baru)', async () => {
-    expect(true).toBe(true);
+describe('idempotency', () => {
+  it('initiate: Idempotency-Key sama + body sama → respons identik (tidak membuat sesi baru)', async () => {
+    const key = 'sec-idem-1';
+    const body = { order_id: ORDER_ID, amount: 82140, method: 'qris' };
+    const a = await srv.request('POST', '/api/v1/payments/initiate', {
+      headers: { 'Idempotency-Key': key },
+      body,
+    });
+    const b = await srv.request('POST', '/api/v1/payments/initiate', {
+      headers: { 'Idempotency-Key': key },
+      body,
+    });
+    expect(a.status).toBe(201);
+    expect(expectOk(b.json)).toEqual(expectOk(a.json));
   });
 
-  it('webhook: transaction_id sama dikirim dua kali → hanya diproses sekali (idempotent)', async () => {
-    expect(true).toBe(true);
+  it('initiate: Idempotency-Key sama + body beda → 409 CONFLICT', async () => {
+    const key = 'sec-idem-2';
+    await srv.request('POST', '/api/v1/payments/initiate', {
+      headers: { 'Idempotency-Key': key },
+      body: { order_id: ORDER_ID, amount: 82140, method: 'qris' },
+    });
+    const res = await srv.request('POST', '/api/v1/payments/initiate', {
+      headers: { 'Idempotency-Key': key },
+      body: { order_id: ORDER_ID, amount: 1, method: 'qris' },
+    });
+    expect(res.status).toBe(409);
+    expect(expectError(res.json).code).toBe('CONFLICT');
+  });
+
+  it('webhook: transaction_id sama dikirim dua kali → hanya diproses sekali (1 payment, 1 log)', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    const payload = {
+      order_id: ORDER_ID,
+      status_code: '200',
+      gross_amount: GROSS,
+      transaction_id: 'trx-idem-webhook',
+      transaction_status: 'settlement',
+      signature_key: sign(ORDER_ID, '200', GROSS),
+    };
+    await srv.request('POST', '/api/v1/payments/webhook/midtrans', { body: payload });
+    await srv.request('POST', '/api/v1/payments/webhook/midtrans', { body: payload });
+    expect(db.payments).toHaveLength(1);
+    expect(db.logs).toHaveLength(1);
   });
 
   it('webhook: transaction_id sama dengan status berbeda tidak menggandakan efek', async () => {
-    expect(true).toBe(true);
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    const base = {
+      order_id: ORDER_ID,
+      status_code: '200',
+      gross_amount: GROSS,
+      transaction_id: 'trx-idem-status',
+      signature_key: sign(ORDER_ID, '200', GROSS),
+    };
+    await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
+      body: { ...base, transaction_status: 'settlement' },
+    });
+    await srv.request('POST', '/api/v1/payments/webhook/midtrans', {
+      body: { ...base, transaction_status: 'capture' },
+    });
+    expect(db.payments).toHaveLength(1);
+    expect(db.orders[0].status).toBe('PAID');
   });
 });
