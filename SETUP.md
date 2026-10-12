@@ -130,6 +130,31 @@ Dua database terpisah (sesuai PRD-BACKEND-DEVOPS §1.4):
 
 Buat 2 database di https://console.upstash.com → salin `rediss://` URL.
 
+### 4.1 Verifikasi konektivitas Upstash
+
+Setelah `REDIS_CACHE_URL` & `REDIS_QUEUE_URL` diisi di `.env`, verifikasi keduanya
+dengan satu perintah (TIDAK menuliskan kredensial ke output):
+
+```bash
+node scripts/verify-upstash.mjs
+```
+
+Skrip memeriksa, per instance:
+
+| # | Langkah | Lolos bila |
+|---|---------|-----------|
+| 1 | **PING** cache & queue | balasan `PONG` |
+| 2 | **maxmemory-policy** | cache = `allkeys-lru`, queue = `noeviction` |
+| 3 | **Round-trip BullMQ** | job `verify.ping` ke queue `reporting` diproses worker lokal (≤15s) lalu dihapus |
+
+**Exit code:** `0` = semua lolos · `1` = ada kegagalan nyata · `2` = **SKIP** (kredensial belum diisi).
+
+> **Catatan Upstash terkelola:** Upstash bisa **menolak perintah `CONFIG`**. Bila itu
+> terjadi, langkah maxmemory-policy ditandai *"tidak dapat diverifikasi (dikelola)"*
+> (⚠️ WARN, bukan gagal) — set policy lewat dashboard Upstash bila perlu.
+>
+> Jalankan ulang kapan pun setelah mengganti kredensial atau membuat database baru.
+
 ---
 
 ## 5. Environment variables (referensi lengkap)
