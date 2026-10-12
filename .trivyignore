@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  Trivy ignore baseline — issue #17 (CI security scan)
+#
+#  Gate Trivy berjalan dengan `--severity HIGH,CRITICAL --ignore-unfixed
+#  --exit-code 1`, artinya CI MERAH kalau ada CVE baru. Entri di bawah adalah
+#  CVE dari BASE IMAGE (bukan dependency aplikasi kita) yang belum bisa
+#  diperbaiki tanpa mengubah Dockerfile — di luar scope issue #17.
+#
+#  ⚠️ Review berkala (tiap sprint). Hapus entri begitu base image diperbarui.
+#  Cara memperbaiki: bump base image (gcr.io/distroless/nodejs20-* / nginx:*) —
+#  butuh koordinasi @backend-engineer (api) & @qa.
+#
+#  Snapshot terakhir: 2026-10-12
+#  Catatan: dependency aplikasi (npm) BERSIH (0 vuln) — lihat job `trivy` fs.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ── distroless/nodejs20 (base API) & nginx (base Web) — openssl libssl3 ──
+# Fixed upstream (3.0.19+/3.0.20+), menunggu base image rebuild.
+CVE-2026-31789   # openssl libssl3 — CRITICAL (heap overflow 32-bit X.509)
+CVE-2026-28387   # openssl libssl3 — HIGH
+CVE-2026-28388   # openssl libssl3 — HIGH
+CVE-2026-28389   # openssl libssl3 — HIGH
+CVE-2026-28390   # openssl libssl3 — HIGH
+CVE-2026-45447   # openssl libssl3 — HIGH
+
+# ── nginx:1.27-alpine (base Web) — paket OS alpine ──
+CVE-2026-33630
+CVE-2025-15467
+CVE-2025-69421
+CVE-2026-84782
+CVE-2025-59375
+CVE-2026-25210
+CVE-2026-45186
+CVE-2026-66046
+CVE-2026-76641
+CVE-2026-76956
+CVE-2026-76957
+CVE-2025-64720
+CVE-2025-65018
+CVE-2025-66293
+CVE-2026-22695
+CVE-2026-22801
+CVE-2026-25646
+CVE-2025-32414
+CVE-2025-32415
+CVE-2025-49794
+CVE-2025-49795
+CVE-2025-49796
+CVE-2026-6732
+CVE-2026-40200
+CVE-2026-27135
+CVE-2026-4775
+CVE-2026-22184

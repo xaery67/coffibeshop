@@ -10,6 +10,8 @@ import { errorHandler } from './middleware/errorMiddleware.js';
 import { apiRouter } from './modules/index.js';
 import { healthRouter } from './routes/health.js';
 import { configRouter } from './routes/config.js';
+import { metricsRouter } from './routes/metrics.js';
+import { metricsMiddleware } from './observability/metrics.js';
 
 /** Bangun Express app (dipisah dari server agar mudah di-test). */
 export function createApp() {
@@ -17,11 +19,14 @@ export function createApp() {
 
   app.disable('x-powered-by');
   app.use(requestId);
+  app.use(metricsMiddleware);
   app.use(
     pinoHttp({
       logger,
       genReqId: (req) => (req as any).requestId,
-      autoLogging: { ignore: (req) => req.url === '/health' || req.url === '/ready' },
+      autoLogging: {
+        ignore: (req) => ['/health', '/ready', '/metrics'].includes(req.url ?? ''),
+      },
     }),
   );
   app.use(helmet({ contentSecurityPolicy: false }));
@@ -38,6 +43,9 @@ export function createApp() {
 
   // Health & readiness (tanpa prefix versi)
   app.use(healthRouter);
+
+  // Metrics Prometheus (issue #17 — observability)
+  app.use(metricsRouter);
 
   // Config publik (ADR-007)
   app.use('/api/v1/config', configRouter);
