@@ -1,7 +1,7 @@
-import { randomUUID, createHmac } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import Midtrans from 'midtrans-client';
 import { env } from '../../../config/env.js';
-import { AppError, BadRequest, Conflict } from '../../../lib/http.js';
+import { BadRequest, Conflict } from '../../../lib/http.js';
 import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult, WebhookVerificationResult } from './payment-provider.interface.js';
 
 // Use the default export as per midtrans-client package structure
@@ -91,9 +91,10 @@ export class MidtransProvider implements PaymentProvider {
     }
   }
 
-  verifyWebhook(payload: Record<string, unknown>, signature: string | undefined): WebhookVerificationResult {
-    if (!signature) {
-      throw BadRequest('Missing signature header');
+  verifyWebhook(payload: Record<string, unknown>, _signature: string | undefined): WebhookVerificationResult {
+    const signatureKey = String(payload.signature_key ?? '');
+    if (!signatureKey) {
+      throw BadRequest('Missing signature_key in payload');
     }
 
     const serverKey = env.MIDTRANS_SERVER_KEY;
@@ -104,12 +105,21 @@ export class MidtransProvider implements PaymentProvider {
     const statusCode = String(payload.status_code ?? '');
     const grossAmount = String(payload.gross_amount ?? '');
 
-    const expectedSignature = createHmac('sha512', serverKey)
+    // Midtrans uses plain SHA512 (not HMAC): SHA512(order_id + status_code + gross_amount + ServerKey)
+    const expectedSignature = createHash('sha512')
       .update(`${orderId}${statusCode}${grossAmount}${serverKey}`)
       .digest('hex');
 
-    if (signature !== expectedSignature) {
+    // Use timing-safe comparison
+    const sigBuf = Buffer.from(signatureKey, 'hex');
+    const expBuf = Buffer.from(expectedSignature, 'hex');
+    if (sigBuf.length !== expBuf.length || !sigBuf.equals(expBuf)) {
       throw BadRequest('Invalid signature');
+    }
+
+    const transactionId = String(payload.transaction_id ?? '');
+    if (!transactionId) {
+      throw BadRequest('Missing transaction_id in payload');
     }
 
     const statusMap: Record<string, WebhookVerificationResult['status']> = {
@@ -127,10 +137,12 @@ export class MidtransProvider implements PaymentProvider {
 
     return {
       success: ['settlement', 'capture'].includes(mappedStatus),
-      transactionId: String(payload.transaction_id ?? randomUUID()),
+      transactionId,
       orderId: String(payload.order_id ?? ''),
       status: mappedStatus,
       amount: Number(payload.gross_amount ?? 0),
+      provider: 'midtrans',
+      method: String(payload.payment_type ?? ''),
       rawPayload: payload,
     };
   }
@@ -144,4 +156,8 @@ export class MidtransProvider implements PaymentProvider {
       return false;
     }
   }
+}
+
+export async function createMidtransProvider(): Promise<PaymentProvider> {
+  return await MidtransProvider.create();
 }

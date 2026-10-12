@@ -1,8 +1,9 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
-import { AppError, BadRequest, Conflict, NotFound, InternalServerError } from '../../lib/http.js';
-import { createMidtransProvider, createXenditProvider } from './providers/xendit.provider.js';
+import { AppError, Conflict, NotFound, InternalServerError } from '../../lib/http.js';
+import { createMidtransProvider } from './providers/midtrans.provider.js';
+import { createXenditProvider } from './providers/xendit.provider.js';
 import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult, WebhookVerificationResult } from './providers/payment-provider.interface.js';
 import { publishOrderEvent } from '../order/sse.controller.js';
 
@@ -168,7 +169,7 @@ export class PaymentService {
     }
 
     // Idempotent: check if already paid
-    const existingPaid = order.payments.find(p => p.status === 'paid');
+    const existingPaid = order.payments.find((p: { status: string }) => p.status === 'paid');
     if (existingPaid) {
       return; // Already processed
     }
@@ -178,8 +179,8 @@ export class PaymentService {
       data: {
         id: randomUUID(),
         order_id: verification.orderId,
-        provider: 'midtrans', // TODO: get from context
-        method: 'midtrans', // TODO: infer from payload
+        provider: verification.provider,
+        method: verification.method,
         amount: verification.amount,
         status: 'paid',
         transaction_id: verification.transactionId,
@@ -220,8 +221,8 @@ export class PaymentService {
       data: {
         id: randomUUID(),
         order_id: verification.orderId,
-        provider: 'midtrans',
-        method: 'unknown',
+        provider: verification.provider,
+        method: verification.method,
         amount: verification.amount,
         status: 'failed',
         transaction_id: verification.transactionId,

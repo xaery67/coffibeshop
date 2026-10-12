@@ -1,4 +1,4 @@
-import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult } from './payment-provider.interface.js';
+import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult, WebhookVerificationResult } from './payment-provider.interface.js';
 import { env } from '../../../config/env.js';
 import { NotImplemented } from '../../../lib/http.js';
 
@@ -16,7 +16,7 @@ export class XenditProvider implements PaymentProvider {
     throw NotImplemented('Xendit implementation deferred to Sprint 3');
   }
 
-  verifyWebhook(_payload: Record<string, unknown>, _signature: string | undefined): any {
+  verifyWebhook(_payload: Record<string, unknown>, _signature: string | undefined): WebhookVerificationResult {
     throw NotImplemented('Xendit webhook not implemented');
   }
 
@@ -31,9 +31,4 @@ export async function createXenditProvider(): Promise<PaymentProvider> {
     return provider;
   }
   throw new Error('Xendit not configured');
-}
-
-export async function createMidtransProvider(): Promise<PaymentProvider> {
-  const { MidtransProvider } = await import('./midtrans.provider.js');
-  return await MidtransProvider.create();
 }

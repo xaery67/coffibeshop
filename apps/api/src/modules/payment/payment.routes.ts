@@ -46,10 +46,11 @@ paymentRouter.post('/initiate', optionalAuth, asyncHandler(async (req, res) => {
 /** POST /api/v1/payments/webhook/:provider — callback gateway (verifikasi signature). */
 paymentRouter.post('/webhook/:provider', asyncHandler(async (req, res) => {
   const providerName = req.params.provider;
-  const signature = req.headers['x-midtrans-signature'] as string | undefined; // Midtrans uses this header
+  // Midtrans sends signature_key in body, not header
+  const signatureKey = req.body?.signature_key as string | undefined;
 
   const paymentService = await getPaymentService();
-  const verification = await paymentService.handleWebhook(providerName, req.body, signature);
+  const verification = await paymentService.handleWebhook(providerName, req.body, signatureKey);
 
   // Always return 200 for idempotent webhook
   sendOk(res, { received: true, provider: providerName, status: verification.status });

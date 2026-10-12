@@ -26,6 +26,8 @@ export interface WebhookVerificationResult {
   orderId: string;
   status: 'settlement' | 'capture' | 'deny' | 'cancel' | 'expire' | 'pending' | 'failure';
   amount: number;
+  provider: string;
+  method: string;
   rawPayload: Record<string, unknown>;
 }
 

@@ -1,6 +1,6 @@
 -- CreateTable
 CREATE TABLE "payment_idempotency" (
-    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "id" UUID NOT NULL,
     "idempotency_key" TEXT NOT NULL,
     "provider" TEXT NOT NULL,
     "request_hash" TEXT NOT NULL,
