@@ -28,6 +28,23 @@ vi.mock('../../config/prisma.js', () => {
   return { prisma };
 });
 
+// Mock Redis (cache invalidasi di updateProduct) — CI tidak punya Redis;
+// tanpa mock, ioredis menggantung & test timeout.
+vi.mock('../../config/redis.js', () => ({
+  redisCache: {
+    get: async () => null,
+    setex: async () => undefined,
+    del: async () => 0,
+    scanStream: () => ({
+      async *[Symbol.asyncIterator]() {
+        yield [];
+      },
+    }),
+  },
+  redisQueue: { quit: async () => undefined },
+  pingRedis: async () => true,
+}));
+
 // Mock uploadToStorage
 vi.mock('../../lib/supabase.js', () => {
   const mockUploadToStorage = vi.fn(async (bucket: string, path: string, buffer: Buffer, mimetype: string) => {
