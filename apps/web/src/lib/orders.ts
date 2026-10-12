@@ -1,4 +1,4 @@
-import type { CheckoutResultDTO, OrderDTO, PaymentMethod } from '@coffibeshop/shared';
+import type { CartItemDTO, CheckoutResultDTO, OrderDTO, PaymentMethod } from '@coffibeshop/shared';
 import { apiFetch } from './api.js';
 
 /** Kontrak order/checkout/pembayaran (PRD-BACKEND §4, live sejak #7). */
@@ -75,6 +75,29 @@ export async function postInitiatePayment(
 /** GET /orders/:id — detail order member (butuh login). */
 export function getOrder(id: string): Promise<OrderDTO> {
   return apiFetch<OrderDTO>(`/orders/${id}`);
+}
+
+/** Riwayat order member (halaman). `GET /orders?page&limit`. */
+export interface OrderHistoryPage {
+  data: OrderDTO[];
+  meta: { page: number; limit: number; total: number; total_pages: number };
+}
+
+export function getOrderHistory(params: { page?: number; limit?: number } = {}): Promise<OrderHistoryPage> {
+  const search = new URLSearchParams({
+    page: String(params.page ?? 1),
+    limit: String(params.limit ?? 20),
+  });
+  return apiFetch<OrderHistoryPage>(`/orders?${search.toString()}`);
+}
+
+/**
+ * POST /orders/:id/reorder — reorder 1-klik (ADR-010, AC-10).
+ * Mengembalikan item pre-filled (varian/opsi/harga terkini); item nonaktif
+ * ditandai `unavailable: true`. FE mendorong ke cart lokal, bukan buat order baru.
+ */
+export function postReorder(orderId: string): Promise<{ items: CartItemDTO[] }> {
+  return apiFetch<{ items: CartItemDTO[] }>(`/orders/${orderId}/reorder`, { method: 'POST' });
 }
 
 /** GET /orders/track/:token — lacak guest (publik). */

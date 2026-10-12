@@ -20,6 +20,12 @@ const PaymentPage = lazy(() =>
   import('./routes/PaymentPage.js').then((m) => ({ default: m.PaymentPage })),
 );
 const TrackPage = lazy(() => import('./routes/TrackPage.js').then((m) => ({ default: m.TrackPage })));
+const OrderHistoryPage = lazy(() =>
+  import('./routes/OrderHistoryPage.js').then((m) => ({ default: m.OrderHistoryPage })),
+);
+const ProfilePage = lazy(() =>
+  import('./routes/ProfilePage.js').then((m) => ({ default: m.ProfilePage })),
+);
 const AdminPage = lazy(() => import('./routes/AdminPage.js').then((m) => ({ default: m.AdminPage })));
 
 /** Fallback skeleton saat chunk halaman dimuat. */
@@ -55,10 +61,9 @@ export function App() {
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/payment/:orderId" element={<PaymentPage />} />
             <Route path="/track/:token?" element={<TrackPage />} />
+            <Route path="/orders" element={<OrderHistoryPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="/admin" element={<AdminPage />} />
-            {/* Placeholder route lain (Sprint berikutnya) — arahkan ke halaman terkait. */}
-            <Route path="/orders" element={<Navigate to="/menu" replace />} />
-            <Route path="/profile" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
