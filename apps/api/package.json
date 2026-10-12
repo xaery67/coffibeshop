@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "CoffeeShop Online API — modular monolith (9 domain service)",
+  "description": "CoffeeShop Online API \u2014 modular monolith (9 domain service)",
   "main": "dist/server.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
@@ -37,6 +37,7 @@
     "prom-client": "^15.1.3",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^11.0.3",
+    "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -48,6 +49,7 @@
     "@types/midtrans-client": "^1.4.0",
     "@types/node": "^22.9.0",
     "@types/swagger-ui-express": "^4.1.7",
+    "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.5",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",

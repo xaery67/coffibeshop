@@ -22,6 +22,15 @@ function createClient(url: string | undefined, label: string): Redis {
 export const redisCache = createClient(env.REDIS_CACHE_URL, 'cache');
 export const redisQueue = createClient(env.REDIS_QUEUE_URL ?? env.REDIS_CACHE_URL, 'queue');
 
+/**
+ * Pub/sub untuk event realtime.
+ * PENTING: ioredis melarang PUBLISH pada koneksi yang sedang dalam mode
+ * SUBSCRIBE ("only (P|S)SUBSCRIBE ... are allowed in this context"), jadi
+ * publisher dan subscriber WAJIB koneksi terpisah.
+ */
+export const redisPubSub = createClient(env.REDIS_QUEUE_URL ?? env.REDIS_CACHE_URL, 'pubsub-publisher');
+export const redisSubscriber = createClient(env.REDIS_QUEUE_URL ?? env.REDIS_CACHE_URL, 'pubsub-subscriber');
+
 /** Health check — kembalikan true bila PING berhasil. */
 export async function pingRedis(): Promise<boolean> {
   try {
