@@ -4,8 +4,8 @@ import { Header, CartFAB, Footer } from './components/layout/Shell.js';
 import { ProductCardSkeleton } from './components/domain/ProductCard.js';
 
 /**
- * Route-level code splitting (PRD-FRONTEND §5.3) — semua halaman di-lazy load
- * agar bundle awal customer tetap kecil. Shell (Header/CartFAB/Footer) dimuat sinkron.
+ * Route-level code splitting (PRD-FRONTEND §5.3) — semua halaman di-lazy load.
+ * AdminShell di-`import()` terpisah → bundle admin TIDAK masuk ke bundle customer.
  */
 const HomePage = lazy(() => import('./routes/HomePage.js').then((m) => ({ default: m.HomePage })));
 const MenuPage = lazy(() => import('./routes/MenuPage.js').then((m) => ({ default: m.MenuPage })));
@@ -26,7 +26,9 @@ const OrderHistoryPage = lazy(() =>
 const ProfilePage = lazy(() =>
   import('./routes/ProfilePage.js').then((m) => ({ default: m.ProfilePage })),
 );
-const AdminPage = lazy(() => import('./routes/AdminPage.js').then((m) => ({ default: m.AdminPage })));
+
+/** Admin — shell & halaman terpisah (bundle sendiri). */
+const AdminRoutes = lazy(() => import('./routes/admin/AdminRoutes.js').then((m) => ({ default: m.AdminRoutes })));
 
 /** Fallback skeleton saat chunk halaman dimuat. */
 function RouteFallback() {
@@ -39,8 +41,8 @@ function RouteFallback() {
   );
 }
 
-/** Shell aplikasi — CustomerShell (PRD-FRONTEND §2.1). */
-export function App() {
+/** CustomerShell — header, nav, cart FAB, footer (PRD-FRONTEND §2.1). */
+function CustomerShell() {
   return (
     <div className="flex min-h-screen flex-col bg-brand-50 text-text">
       <a
@@ -63,7 +65,6 @@ export function App() {
             <Route path="/track/:token?" element={<TrackPage />} />
             <Route path="/orders" element={<OrderHistoryPage />} />
             <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/admin" element={<AdminPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
@@ -72,5 +73,21 @@ export function App() {
       <CartFAB />
       <Footer />
     </div>
+  );
+}
+
+/**
+ * Root aplikasi. Dua shell terpisah: `/admin/*` memakai `AdminShell` (lazy),
+ * sisanya `CustomerShell`. Pemisahan route di level ini memastikan customer
+ * tidak pernah mengunduh kode admin.
+ */
+export function App() {
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        <Route path="/admin/*" element={<AdminRoutes />} />
+        <Route path="/*" element={<CustomerShell />} />
+      </Routes>
+    </Suspense>
   );
 }
