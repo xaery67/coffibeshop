@@ -5,7 +5,6 @@
  * Jalankan: node qa-security-s4.js
  */
 const BASE = process.env.QA_BASE_URL || 'http://localhost:4000';
-import { createHash } from 'node:crypto';
 
 let pass = 0, fail = 0;
 function check(name, cond, detail = '') {
@@ -24,9 +23,8 @@ async function api(method, path, { token, body } = {}) {
 async function main() {
   console.log('=== QA Sprint 4 — Security probe (live) ===\n');
 
-  // Login owner (staff tertinggi).
-  const login = await api('POST', '/api/v1/auth/login', { body: { email: 'owner@coffibeshop.id', password: 'ChangeMe123!' } });
-  const ownerToken = login.json.data.access_token;
+  // Login owner — memastikan seed dev hidup (probe RBAC di bawah memakai token member).
+  await api('POST', '/api/v1/auth/login', { body: { email: 'owner@coffibeshop.id', password: 'ChangeMe123!' } });
 
   // 1) Tanpa token → 401 di endpoint staff Sprint 4.
   console.log('[RBAC — tanpa token → 401]');
