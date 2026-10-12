@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { asyncHandler, sendOk } from '../../lib/http.js';
+import { asyncHandler, sendOk, BadRequest, NotFound } from '../../lib/http.js';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
+import { multerUpload, handleMulterError } from '../../middleware/upload.js';
 import {
   ProductQuery,
   OutletInput,
@@ -14,6 +15,7 @@ import {
   OptionValueInput,
 } from '@coffibeshop/shared';
 import { CatalogService } from './catalog.service.js';
+import { uploadToStorage } from '../../lib/supabase.js';
 
 export const catalogRouter = Router();
 const service = new CatalogService();
@@ -119,6 +121,58 @@ catalogRouter.delete(
   requireAuth,
   requireRole('owner', 'manager'),
   asyncHandler(async (req, res) => sendOk(res, await service.deleteProduct(req.params.id))),
+);
+
+/** POST /api/v1/catalog/products/:id/image — upload foto produk (owner/manager). */
+catalogRouter.post(
+  '/products/:id/image',
+  requireAuth,
+  requireRole('owner', 'manager'),
+  multerUpload.single('image'),
+  handleMulterError,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const file = req.file;
+    
+    if (!file) throw BadRequest('File image wajib diunggah (field: image)');
+    
+    // Validasi MIME type
+    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw BadRequest('Format file tidak didukung. Hanya JPEG, PNG, WebP yang diperbolehkan');
+    }
+    
+    // Validasi ukuran file (5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      throw BadRequest('Ukuran file maksimal 5MB');
+    }
+    
+    // Cek produk ada
+    const product = await service.getProductById(id);
+    if (!product) throw NotFound('Produk tidak ditemukan');
+    
+    // Upload ke Supabase Storage
+    const bucket = 'product-images';
+    const ext = file.mimetype === 'image/jpeg' ? '.jpg' : 
+                file.mimetype === 'image/png' ? '.png' : '.webp';
+    const path = `products/${id}/${Date.now()}${ext}`;
+    
+    const publicUrl = await uploadToStorage(bucket, path, file.buffer, file.mimetype);
+    
+    if (!publicUrl) {
+      throw BadRequest('Supabase Storage belum dikonfigurasi (set SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY)');
+    }
+    
+    // Update produk dengan image_url baru
+    const updated = await service.updateProduct(id, { image_url: publicUrl });
+    
+    sendOk(res, { 
+      product_id: id, 
+      image_url: publicUrl,
+      product: updated 
+    }, 201);
+  }),
 );
 
 /** POST /api/v1/catalog/products/:id/variants — tambah varian (owner/manager). */
