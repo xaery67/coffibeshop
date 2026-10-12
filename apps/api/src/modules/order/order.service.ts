@@ -275,11 +275,17 @@ export class OrderService {
 
   async queue(query: any) {
     const statuses = query.status ? String(query.status).split(',') : ['PAID', 'CONFIRMED'];
+    const outletId = typeof query.outlet_id === 'string' ? query.outlet_id : undefined;
     return prisma.order.findMany({
-      where: { status: { in: statuses as any } },
+      where: {
+        status: { in: statuses as any },
+        ...(outletId ? { outlet_id: outletId } : {}),
+      },
       orderBy: { created_at: 'asc' },
       take: 50,
-      include: { items: true },
+      include: {
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
     });
   }
 
@@ -432,27 +438,37 @@ export class OrderService {
               return updated;
             }
 
+  /**
+   * PUT /orders/:id/status — state machine kanonik + audit log (F-011, #9).
+   *
+   * - Transisi ilegal → 409 Conflict.
+   * - Saat → CONFIRMED, trigger PG `trg_orders_deduct_inventory` mengurangi stok
+   *   secara atomik; bila stok kurang trigger melempar exception → 409 + rollback.
+   * - Setiap perubahan dicatat ke `order_status_logs` (from_status → to_status)
+   *   dan di-publish ke Redis (`order:status`) untuk fan-out WebSocket staff.
+   */
   async updateStatus(orderId: string, body: any) {
-      // Validasi transisi status kanonik
-      const validTransitions: Record<string, string[]> = {
-        PENDING: ['PAID', 'CANCELLED'],
-        PAID: ['CONFIRMED', 'CANCELLED'],
-        CONFIRMED: ['BEING_PREPARED', 'CANCELLED'],
-        BEING_PREPARED: ['READY', 'CANCELLED'],
-        READY: ['COMPLETED', 'CANCELLED'],
-        COMPLETED: [],
-        CANCELLED: [],
-      };
+    const validTransitions: Record<string, string[]> = {
+      PENDING: ['PAID', 'CANCELLED'],
+      PAID: ['CONFIRMED', 'CANCELLED'],
+      CONFIRMED: ['BEING_PREPARED', 'CANCELLED'],
+      BEING_PREPARED: ['READY', 'CANCELLED'],
+      READY: ['COMPLETED', 'CANCELLED'],
+      COMPLETED: [],
+      CANCELLED: [],
+    };
 
-      const order = await prisma.order.findUnique({ where: { id: orderId } });
-      if (!order) throw NotFound('Order tidak ditemukan');
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw NotFound('Order tidak ditemukan');
 
-      const allowed = validTransitions[order.status] ?? [];
-      if (!allowed.includes(body.status)) {
-        throw Conflict(`Transisi ${order.status} → ${body.status} tidak diizinkan`);
-      }
+    const allowed = validTransitions[order.status] ?? [];
+    if (!allowed.includes(body.status)) {
+      throw Conflict(`Transisi ${order.status} → ${body.status} tidak diizinkan`);
+    }
 
-      const updated = await prisma.$transaction(async (tx) => {
+    let updated;
+    try {
+      updated = await prisma.$transaction(async (tx) => {
         const o = await tx.order.update({
           where: { id: orderId },
           data: { status: body.status },
@@ -461,6 +477,7 @@ export class OrderService {
         await tx.orderStatusLog.create({
           data: {
             order_id: orderId,
+            from_status: order.status,
             to_status: body.status,
             note: body.note ?? null,
             changed_by: body.changed_by ?? null,
@@ -469,20 +486,30 @@ export class OrderService {
 
         return o;
       });
-
-      // Publish status change event to Redis for WebSocket fan-out
-            await redisPubSub.publish('order:status', JSON.stringify({
-              type: 'status',
-              order_id: orderId,
-              order_number: updated.order_number,
-              outlet_id: order.outlet_id ?? null,
-              status: body.status,
-              previous_status: order.status,
-              changed_by: body.changed_by ?? null,
-              timestamp: new Date().toISOString(),
-            }));
-
-      publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
-      return updated;
+    } catch (err) {
+      // Trigger inventori melempar check_violation saat stok kurang → petakan ke 409.
+      const msg = (err as Error).message ?? '';
+      if (/Stok .* tidak mencukupi/.test(msg)) {
+        throw Conflict(msg.split('\n')[0]);
+      }
+      throw err;
     }
+
+    await redisPubSub.publish(
+      'order:status',
+      JSON.stringify({
+        type: 'status',
+        order_id: orderId,
+        order_number: updated.order_number,
+        outlet_id: order.outlet_id ?? null,
+        status: body.status,
+        previous_status: order.status,
+        changed_by: body.changed_by ?? null,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+
+    publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
+    return updated;
+  }
 }

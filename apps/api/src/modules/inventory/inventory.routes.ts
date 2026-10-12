@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { asyncHandler, sendOk, BadRequest } from '../../lib/http.js';
-import { requireAuth, requireRole, requireMinRole } from '../../middleware/auth.js';
+import { asyncHandler, sendOk } from '../../lib/http.js';
+import { requireAuth, requireMinRole } from '../../middleware/auth.js';
 import { InventoryService } from './inventory.service.js';
 
 export const inventoryRouter = Router();
@@ -46,6 +46,20 @@ inventoryRouter.get(
   }),
 );
 
+/**
+ * GET /api/v1/inventory/alerts?outlet_id= — low-stock alerts (PRD §2.5).
+ * Alias `/low-stock` dengan bentuk respons `LowStockAlertDTO` (kontrak dashboard FE).
+ */
+inventoryRouter.get(
+  '/alerts',
+  requireAuth,
+  requireMinRole('kasir'),
+  asyncHandler(async (req, res) => {
+    const outletId = (req as any).user?.outlet_id ?? req.query.outlet_id as string | undefined;
+    sendOk(res, await service.getAlerts(outletId));
+  }),
+);
+
 /** POST /api/v1/inventory — tambah item stok (manager/owner). */
 inventoryRouter.post(
   '/',
@@ -66,12 +80,3 @@ inventoryRouter.put(
   }),
 );
 
-/** POST /api/v1/inventory/deduct/:orderId — deduksi stok untuk order (admin). */
-inventoryRouter.post(
-  '/deduct/:orderId',
-  requireAuth,
-  requireMinRole('manager'),
-  asyncHandler(async (req, res) => {
-    sendOk(res, await service.deductForOrder(req.params.orderId));
-  }),
-);

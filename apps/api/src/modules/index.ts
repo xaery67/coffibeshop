@@ -8,7 +8,6 @@ import { loyaltyRouter } from './loyalty/loyalty.routes.js';
 import { reportingRouter } from './reporting/reporting.routes.js';
 import { notificationRouter } from './notification/notification.routes.js';
 import { adminRouter } from './admin/admin.routes.js';
-import { reportingRouter as adminReportingRouter } from './admin/reporting.routes.js';
 
 /** Router utama /api/v1 — 9 domain service (PRD-BACKEND §2). */
 export const apiRouter = Router();
@@ -22,4 +21,3 @@ apiRouter.use('/loyalty', loyaltyRouter);
 apiRouter.use('/reports', reportingRouter);
 apiRouter.use('/notifications', notificationRouter);
 apiRouter.use('/admin', adminRouter);
-apiRouter.use('/admin', adminReportingRouter);

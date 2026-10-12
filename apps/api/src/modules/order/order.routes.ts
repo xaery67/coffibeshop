@@ -4,19 +4,9 @@ import { optionalAuth, requireAuth, getGuestId, requireRole } from '../../middle
 import { sseRateLimit } from '../../middleware/sseRateLimit.js';
 import { OrderService } from './order.service.js';
 import { streamOrderEvents } from './sse.controller.js';
-import { startOrderQueueWs, getOrderQueueWs } from './ws.controller.js';
 
 export const orderRouter = Router();
 const service = new OrderService();
-
-// Initialize WebSocket server on module load
-let wsInitialized = false;
-async function ensureWsInitialized() {
-  if (!wsInitialized) {
-    await startOrderQueueWs();
-    wsInitialized = true;
-  }
-}
 
 /** GET /api/v1/orders/cart — cart aktif (member via JWT, guest via X-Guest-Id). */
 orderRouter.get(
@@ -93,21 +83,6 @@ orderRouter.get(
   '/',
   requireAuth,
   asyncHandler(async (req, res) => sendOk(res, await service.history((req as any).user.id, req.query))),
-);
-
-/** GET /api/v1/orders/queue/ws — WebSocket connection info (staff only). */
-orderRouter.get(
-  '/queue/ws',
-  requireAuth,
-  requireRole('owner', 'manager', 'kasir', 'barista'),
-  asyncHandler(async (_req, res) => {
-    await ensureWsInitialized();
-    const ws = getOrderQueueWs();
-    sendOk(res, {
-      connected: ws ? ws.getConnectedClients() : 0,
-      status: ws ? 'running' : 'stopped',
-    });
-  }),
 );
 
 /** GET /api/v1/orders/queue — antrian staff (RBAC). */

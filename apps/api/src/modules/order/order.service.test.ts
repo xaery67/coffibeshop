@@ -41,11 +41,11 @@ vi.mock('../../config/redis.js', () => ({
       h.events.push({ channel, message: JSON.parse(message) });
       return 1;
     },
-    subscribe: async (channel: string, callback: (msg: string) => void) => {
+    subscribe: async (_channel: string, _callback: (msg: string) => void) => {
       // Mock subscription - just store callback if needed
       return 1;
     },
-    unsubscribe: async (channel: string) => {
+    unsubscribe: async (_channel: string) => {
       return 1;
     },
   },

@@ -52,8 +52,7 @@ const EnvSchema = z.object({
   SHIPPING_FLAT_FEE: z.coerce.number().default(10000),
   SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(15000),
   TRACKING_POLL_INTERVAL_MS: z.coerce.number().default(3000),
-    WS_PORT: z.coerce.number().default(4001),
-  });
+});
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
