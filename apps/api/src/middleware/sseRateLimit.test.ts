@@ -3,11 +3,13 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 /** State in-memory untuk mock Redis. */
 const h = vi.hoisted(() => ({
   store: new Map<string, string>(),
+  failIncr: false,
 }));
 
-vi.mock('../../config/redis.js', () => ({
+vi.mock('../config/redis.js', () => ({
   redisCache: {
     incr: async (k: string) => {
+      if (h.failIncr) throw new Error('Redis down');
       const current = parseInt(h.store.get(k) ?? '0', 10) + 1;
       h.store.set(k, String(current));
       return current;
@@ -46,6 +48,7 @@ describe('sseRateLimit middleware (TC-REALTIME-INFRA)', () => {
 
   beforeEach(() => {
     h.store.clear();
+    h.failIncr = false;
     req = createMockReq();
     res = createMockRes();
     next = vi.fn();
@@ -101,19 +104,10 @@ describe('sseRateLimit middleware (TC-REALTIME-INFRA)', () => {
   });
 
   it('fail-open saat Redis error', async () => {
-    // Create a fresh middleware that uses a mock that fails
-    const errorMiddleware = async (req: any, res: any, next: any) => {
-      try {
-        // Simulate redis error by throwing
-        throw new Error('Redis down');
-      } catch (err) {
-        // Fail open - if Redis is down, don't block requests
-        console.warn('[sseRateLimit] Redis error, failing open:', err);
-        next();
-      }
-    };
-    
-    await errorMiddleware(req, res, next);
-    expect(next).toHaveBeenCalledWith(); // No error passed
+    const middleware = sseRateLimit(40, 60_000);
+    // Paksa Redis incr melempar error → middleware harus fail-open (next tanpa error).
+    h.failIncr = true;
+    await middleware(req, res, next);
+    expect(next).toHaveBeenCalledWith(); // tidak memblokir, tanpa error
   });
 });
