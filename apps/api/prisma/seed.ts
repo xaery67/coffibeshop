@@ -1,5 +1,13 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { config as loadEnv } from 'dotenv';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// `tsx` tidak memuat .env otomatis (cwd = apps/api). Muat .env ROOT agar
+// `npm run db:seed` andal di lokal; di Docker env sudah disuntik via compose,
+// file tidak ada → diabaikan (dotenv tidak menimpa env yang sudah ada).
+loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '../../../.env') });
 
 const prisma = new PrismaClient();
 
