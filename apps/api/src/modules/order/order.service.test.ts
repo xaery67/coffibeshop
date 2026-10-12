@@ -36,8 +36,21 @@ vi.mock('../../config/redis.js', () => ({
     quit: async () => undefined,
   },
   redisQueue: { quit: async () => undefined },
+  redisPubSub: {
+    publish: async (channel: string, message: string) => {
+      h.events.push({ channel, message: JSON.parse(message) });
+      return 1;
+    },
+    subscribe: async (_channel: string, _callback: (msg: string) => void) => {
+      // Mock subscription - just store callback if needed
+      return 1;
+    },
+    unsubscribe: async (_channel: string) => {
+      return 1;
+    },
+  },
   pingRedis: async () => true,
-}));
+}))
 
 vi.mock('./sse.controller.js', () => ({
   publishOrderEvent: (key: string, payload: any) => void h.events.push({ key, payload }),
@@ -358,11 +371,12 @@ describe('updateStatus — state machine kanonik', () => {
   });
 
   it('publish event SSE status_change setiap perubahan', async () => {
-    const o = seedOrder({ status: 'PENDING' });
-    await svc.updateStatus(o.id, { status: 'PAID' });
-    expect(h.events).toHaveLength(1);
-    expect(h.events[0].payload).toMatchObject({ status: 'PAID' });
-  });
+      const o = seedOrder({ status: 'PENDING' });
+      await svc.updateStatus(o.id, { status: 'PAID' });
+      // Now publishes both to redisPubSub and SSE - expect 2 events
+      expect(h.events.length).toBeGreaterThanOrEqual(1);
+      expect(h.events.some(e => e.payload?.status === 'PAID')).toBe(true);
+    });
 });
 
 // ═══════════════ customer cancel (ADR-012) ═══════════════

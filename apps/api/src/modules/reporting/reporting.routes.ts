@@ -1,12 +1,80 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk } from '../../lib/http.js';
+import { requireAuth, requireMinRole } from '../../middleware/auth.js';
+import { ReportingService } from './reporting.service.js';
 
 /**
- * Reporting — kerangka domain service (PRD-BACKEND §2).
- * Implementasi detail mengikuti sprint plan (docs/SPRINT-PLAN.md).
+ * Reporting routes (F-014, PRD-BACKEND §2.7) — di-mount pada `/api/v1/reports`.
+ * Kontrak path PERSIS seperti `docs/PRD-BACKEND.md` §2.7 & `apps/web/src/lib/admin.ts`.
  */
 export const reportingRouter = Router();
+const service = new ReportingService();
 
-reportingRouter.get('/_status', asyncHandler(async (_req, res) =>
-  sendOk(res, { service: 'reporting', status: 'scaffolded' }),
-));
+/** Ambil outlet dari JWT (staff ter-scope) atau query (owner lintas outlet). */
+function outletOf(req: { user?: { outlet_id?: string | null }; query: Record<string, unknown> }): string | null {
+  const fromUser = req.user?.outlet_id ?? null;
+  const fromQuery = typeof req.query.outlet_id === 'string' ? req.query.outlet_id : null;
+  return fromUser ?? fromQuery;
+}
+
+/** GET /api/v1/reports/daily?outlet_id=&date= */
+reportingRouter.get(
+  '/daily',
+  requireAuth,
+  requireMinRole('kasir'),
+  asyncHandler(async (req, res) => {
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    sendOk(res, await service.getDailyReport(outletOf(req as never), date));
+  }),
+);
+
+/** GET /api/v1/reports/monthly?outlet_id=&month=&year= */
+reportingRouter.get(
+  '/monthly',
+  requireAuth,
+  requireMinRole('kasir'),
+  asyncHandler(async (req, res) => {
+    const year = req.query.year ? Number(req.query.year) : undefined;
+    const month = req.query.month ? Number(req.query.month) : undefined;
+    sendOk(res, await service.getMonthlyReport(outletOf(req as never), year, month));
+  }),
+);
+
+/** GET /api/v1/reports/top-products?outlet_id=&period=7d|30d */
+reportingRouter.get(
+  '/top-products',
+  requireAuth,
+  requireMinRole('kasir'),
+  asyncHandler(async (req, res) => {
+    const period = req.query.period === '30d' ? '30d' : '7d';
+    sendOk(res, await service.getTopProducts(outletOf(req as never), period));
+  }),
+);
+
+/** GET /api/v1/reports/kpi?outlet_id=&date= — KPI dashboard admin. */
+reportingRouter.get(
+  '/kpi',
+  requireAuth,
+  requireMinRole('kasir'),
+  asyncHandler(async (req, res) => {
+    const date = typeof req.query.date === 'string' ? req.query.date : undefined;
+    sendOk(res, await service.getKpi(outletOf(req as never), date));
+  }),
+);
+
+/** GET /api/v1/reports/export/accounting?outlet_id=&year=&month=&format=csv */
+reportingRouter.get(
+  '/export/accounting',
+  requireAuth,
+  requireMinRole('manager'),
+  asyncHandler(async (req, res) => {
+    const year = req.query.year ? Number(req.query.year) : undefined;
+    const month = req.query.month ? Number(req.query.month) : undefined;
+    const { filename, content } = await service.exportAccountingCsv(outletOf(req as never), year, month);
+    res.set({
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+    });
+    res.send(content);
+  }),
+);
