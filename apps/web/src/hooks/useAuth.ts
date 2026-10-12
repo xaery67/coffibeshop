@@ -14,6 +14,8 @@ export interface SessionUser {
   email: string;
   full_name: string;
   role: string;
+  /** Outlet terkait untuk staff ber-scope (kasir/barista); null untuk owner/manager. */
+  outlet_id?: string | null;
 }
 
 const listeners = new Set<() => void>();
