@@ -9,10 +9,39 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, '..');
+
+// Muat .env root (skrip jalan dari mana saja) — jangan timpa env yang sudah ada.
+function loadEnvFile() {
+  const file = join(ROOT, '.env');
+  if (!existsSync(file)) return;
+  for (const raw of readFileSync(file, 'utf8').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    if (eq === -1) continue;
+    const k = line.slice(0, eq).trim();
+    let v = line.slice(eq + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+}
+loadEnvFile();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const BUCKET = 'product-images';
+const BUCKET = process.env.SUPABASE_STORAGE_BUCKET || 'cs-dev-products';
+
+// PNG 1x1 transparan — MIME image/png (bucket membatasi jpeg/png/webp).
+const PNG_1X1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 async function main() {
   console.log('[verify-supabase] Memulai verifikasi Supabase Storage...');
@@ -42,8 +71,8 @@ async function main() {
     
     console.log(`[verify-supabase]   Buckets ditemukan: ${buckets.map(b => b.name).join(', ')}`);
     
-    // 2. Cek bucket product-images
-    console.log('[verify-supabase] 2/3 Cek bucket product-images...');
+    // 2. Cek bucket (dari SUPABASE_STORAGE_BUCKET)
+    console.log(`[verify-supabase] 2/3 Cek bucket ${BUCKET}...`);
     const bucketExists = buckets.some(b => b.name === BUCKET);
     
     if (!bucketExists) {
@@ -54,13 +83,12 @@ async function main() {
     
     // 3. Upload test file + hapus
     console.log('[verify-supabase] 3/3 Test upload & delete...');
-    const testPath = `verify/${Date.now()}.txt`;
-    const testContent = Buffer.from('Supabase Storage verification test');
+    const testPath = `verify/${Date.now()}.png`;
     
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(testPath, testContent, {
-        contentType: 'text/plain',
+      .upload(testPath, PNG_1X1, {
+        contentType: 'image/png',
         upsert: true,
       });
     

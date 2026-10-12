@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler, sendOk, BadRequest, NotFound } from '../../lib/http.js';
+import { asyncHandler, sendOk, BadRequest, NotFound, ServiceUnavailable } from '../../lib/http.js';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { multerUpload, handleMulterError } from '../../middleware/upload.js';
@@ -16,6 +16,7 @@ import {
 } from '@coffibeshop/shared';
 import { CatalogService } from './catalog.service.js';
 import { uploadToStorage } from '../../lib/supabase.js';
+import { env } from '../../config/env.js';
 
 export const catalogRouter = Router();
 const service = new CatalogService();
@@ -152,8 +153,8 @@ catalogRouter.post(
     const product = await service.getProductById(id);
     if (!product) throw NotFound('Produk tidak ditemukan');
     
-    // Upload ke Supabase Storage
-    const bucket = 'product-images';
+    // Upload ke Supabase Storage (bucket dari env — jangan hardcode)
+    const bucket = env.SUPABASE_STORAGE_BUCKET;
     const ext = file.mimetype === 'image/jpeg' ? '.jpg' : 
                 file.mimetype === 'image/png' ? '.png' : '.webp';
     const path = `products/${id}/${Date.now()}${ext}`;
@@ -161,7 +162,7 @@ catalogRouter.post(
     const publicUrl = await uploadToStorage(bucket, path, file.buffer, file.mimetype);
     
     if (!publicUrl) {
-      throw BadRequest('Supabase Storage belum dikonfigurasi (set SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY)');
+      throw ServiceUnavailable('Supabase Storage belum dikonfigurasi (set SUPABASE_URL & SUPABASE_SERVICE_ROLE_KEY)');
     }
     
     // Update produk dengan image_url baru

@@ -177,7 +177,7 @@ describe('POST /catalog/products/:id/image', () => {
     const json = res.json;
     
     expect(json.success).toBe(false);
-    expect(json.error.code).toBe('BAD_REQUEST');
+    expect(json.error.code).toBe('SERVICE_UNAVAILABLE');
     expect(json.error.message).toContain('belum dikonfigurasi');
   });
 
@@ -201,7 +201,8 @@ describe('POST /catalog/products/:id/image', () => {
     
     expect(json.success).toBe(true);
     expect(json.data.product_id).toBe(productId);
-    expect(json.data.image_url).toContain('https://example.supabase.co/storage/v1/object/public/product-images/products/');
+    expect(json.data.image_url).toContain('/storage/v1/object/public/');
+    expect(json.data.image_url).toContain('/products/');
     expect(json.data.product.image_url).toBe(json.data.image_url);
   });
 

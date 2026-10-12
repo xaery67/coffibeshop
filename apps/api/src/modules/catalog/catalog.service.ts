@@ -240,8 +240,9 @@ export class CatalogService {
       if (!isValidUuid(id)) return null;
       const product = await prisma.product.findUnique({
         where: { id },
-        select: { id: true, image_url: true, outlet_id: true },
+        select: { id: true, image_url: true, outlet_id: true, is_active: true },
       });
+      if (!product || !product.is_active) return null;
       return product;
     }
 
