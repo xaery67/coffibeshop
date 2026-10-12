@@ -68,3 +68,50 @@ export async function truncateForTest(prisma: any): Promise<void> {
     RESTART IDENTITY CASCADE
   `);
 }
+
+/**
+ * Provision DATABASE SEMENTARA sendiri + `prisma migrate deploy`, untuk isolasi
+ * penuh antar file test DB-heavy (issue #55). Aman dijalankan paralel: DB tidak
+ * dibagi dengan file lain, lalu di-DROP di teardown.
+ *
+ * Prasyarat: `QA_TEST_DATABASE_URL` menunjuk DB yang boleh CREATE/DROP DATABASE.
+ * Panggil `teardownTempDb` di `afterAll` (selalu, walau test gagal).
+ *
+ * @example
+ *   const t = await provisionTempDb('cb_qa_s4');
+ *   // ... pakai t.prisma ...
+ *   await teardownTempDb(t);
+ */
+export async function provisionTempDb(prefix = 'cb_qa_tmp'): Promise<{
+  url: string;
+  dbName: string;
+  admin: any;
+  prisma: any;
+}> {
+  const { execSync } = await import('node:child_process');
+  const dbName = tempDbName(prefix);
+  const url = deriveDbUrl(TEST_DB_URL, dbName);
+  const admin = await makePrisma(adminDbUrl());
+  await admin.$executeRawUnsafe(`CREATE DATABASE "${dbName}"`);
+  execSync('npx prisma migrate deploy', {
+    cwd: process.cwd(),
+    env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url },
+    encoding: 'utf8',
+  });
+  const prisma = await makePrisma(url);
+  return { url, dbName, admin, prisma };
+}
+
+/** Hapus DB sementara yang dibuat `provisionTempDb` (terminate koneksi dulu). */
+export async function teardownTempDb(t: { dbName: string; admin: any; prisma?: any }): Promise<void> {
+  await t.prisma?.$disconnect?.();
+  if (!t.admin || !t.dbName) return;
+  try {
+    await t.admin.$executeRawUnsafe(
+      `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${t.dbName}' AND pid <> pg_backend_pid()`,
+    );
+    await t.admin.$executeRawUnsafe(`DROP DATABASE IF EXISTS "${t.dbName}"`);
+  } finally {
+    await t.admin.$disconnect();
+  }
+}
