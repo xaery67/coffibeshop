@@ -56,10 +56,11 @@ services:
       API_BASE_URL: http://localhost:4000
       LOG_LEVEL: debug
       CORS_ORIGIN: http://localhost:5173
-      DATABASE_URL: postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop
-      DIRECT_URL: postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop
-      REDIS_CACHE_URL: redis://redis:6379
-      REDIS_QUEUE_URL: redis://redis:6379
+      # Cloud (Supabase/Upstash) dari .env root bila diisi; fallback ke container lokal.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop}
+      REDIS_CACHE_URL: ${REDIS_CACHE_URL:-redis://redis:6379}
+      REDIS_QUEUE_URL: ${REDIS_QUEUE_URL:-redis://redis:6379}
       JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
       JWT_PUBLIC_KEY_PATH: /keys/jwt-public.pem
 
