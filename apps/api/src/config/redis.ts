@@ -22,6 +22,9 @@ function createClient(url: string | undefined, label: string): Redis {
 export const redisCache = createClient(env.REDIS_CACHE_URL, 'cache');
 export const redisQueue = createClient(env.REDIS_QUEUE_URL ?? env.REDIS_CACHE_URL, 'queue');
 
+// Pub/sub client for real-time events
+export const redisPubSub = createClient(env.REDIS_QUEUE_URL ?? env.REDIS_CACHE_URL, 'pubsub');
+
 /** Health check — kembalikan true bila PING berhasil. */
 export async function pingRedis(): Promise<boolean> {
   try {

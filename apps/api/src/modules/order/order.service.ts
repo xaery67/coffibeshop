@@ -1,6 +1,6 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { prisma } from '../../config/prisma.js';
-import { redisCache } from '../../config/redis.js';
+import { redisCache, redisPubSub } from '../../config/redis.js';
 import { env } from '../../config/env.js';
 import { BadRequest, NotFound, Forbidden, Conflict } from '../../lib/http.js';
 import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart, normalizeCartItemInput, readCartMeta, writeCartMeta, clearCartMeta } from './cart.service.js';
@@ -157,16 +157,26 @@ export class OrderService {
       });
 
       // OrderStatusLog awal (bug #5) - gunakan to_status sesuai schema
-      await tx.orderStatusLog.create({
-        data: {
-          order_id: order.id,
-          to_status: 'PENDING',
-          note: 'Order dibuat',
-          changed_by: userId ?? null,
-        },
-      });
+            await tx.orderStatusLog.create({
+              data: {
+                order_id: order.id,
+                to_status: 'PENDING',
+                note: 'Order dibuat',
+                changed_by: userId ?? null,
+              },
+            });
 
-      // Batch fetch produk+opsi untuk snapshot opsi (N+1 fix bug #4)
+            // Publish order created event to Redis for WebSocket fan-out
+                        await redisPubSub.publish('order:created', JSON.stringify({
+                                      type: 'created',
+                                      order_id: order.id,
+                                      order_number,
+                                      outlet_id: order.outlet_id ?? null,
+                                      status: 'PENDING',
+                                      created_at: new Date().toISOString(),
+                                    }));
+
+            // Batch fetch produk+opsi untuk snapshot opsi (N+1 fix bug #4)
       const productIds = [...new Set(normalizedItems.map(i => i.product_id))];
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
@@ -404,51 +414,75 @@ export class OrderService {
                 }
 
         return o;
-      });
+              });
 
-      publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
-      return updated;
-    }
+              // Publish cancellation event to Redis for WebSocket fan-out
+                            await redisPubSub.publish('order:cancelled', JSON.stringify({
+                                            type: 'cancelled',
+                                            order_id: orderId,
+                                            order_number: updated.order_number,
+                                            outlet_id: order.outlet_id ?? null,
+                                            status: 'CANCELLED',
+                                            previous_status: order.status,
+                                            reason: reason ?? 'Dibatalkan oleh customer',
+                                            timestamp: new Date().toISOString(),
+                                          }));
+
+              publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
+              return updated;
+            }
 
   async updateStatus(orderId: string, body: any) {
-    // Validasi transisi status kanonik
-    const validTransitions: Record<string, string[]> = {
-      PENDING: ['PAID', 'CANCELLED'],
-      PAID: ['CONFIRMED', 'CANCELLED'],
-      CONFIRMED: ['BEING_PREPARED', 'CANCELLED'],
-      BEING_PREPARED: ['READY', 'CANCELLED'],
-      READY: ['COMPLETED', 'CANCELLED'],
-      COMPLETED: [],
-      CANCELLED: [],
-    };
+      // Validasi transisi status kanonik
+      const validTransitions: Record<string, string[]> = {
+        PENDING: ['PAID', 'CANCELLED'],
+        PAID: ['CONFIRMED', 'CANCELLED'],
+        CONFIRMED: ['BEING_PREPARED', 'CANCELLED'],
+        BEING_PREPARED: ['READY', 'CANCELLED'],
+        READY: ['COMPLETED', 'CANCELLED'],
+        COMPLETED: [],
+        CANCELLED: [],
+      };
 
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) throw NotFound('Order tidak ditemukan');
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
+      if (!order) throw NotFound('Order tidak ditemukan');
 
-    const allowed = validTransitions[order.status] ?? [];
-    if (!allowed.includes(body.status)) {
-      throw Conflict(`Transisi ${order.status} → ${body.status} tidak diizinkan`);
+      const allowed = validTransitions[order.status] ?? [];
+      if (!allowed.includes(body.status)) {
+        throw Conflict(`Transisi ${order.status} → ${body.status} tidak diizinkan`);
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const o = await tx.order.update({
+          where: { id: orderId },
+          data: { status: body.status },
+        });
+
+        await tx.orderStatusLog.create({
+          data: {
+            order_id: orderId,
+            to_status: body.status,
+            note: body.note ?? null,
+            changed_by: body.changed_by ?? null,
+          },
+        });
+
+        return o;
+      });
+
+      // Publish status change event to Redis for WebSocket fan-out
+            await redisPubSub.publish('order:status', JSON.stringify({
+              type: 'status',
+              order_id: orderId,
+              order_number: updated.order_number,
+              outlet_id: order.outlet_id ?? null,
+              status: body.status,
+              previous_status: order.status,
+              changed_by: body.changed_by ?? null,
+              timestamp: new Date().toISOString(),
+            }));
+
+      publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
+      return updated;
     }
-
-    const updated = await prisma.$transaction(async (tx) => {
-      const o = await tx.order.update({
-        where: { id: orderId },
-        data: { status: body.status },
-      });
-
-      await tx.orderStatusLog.create({
-        data: {
-          order_id: orderId,
-          to_status: body.status,
-          note: body.note ?? null,
-          changed_by: body.changed_by ?? null,
-        },
-      });
-
-      return o;
-    });
-
-    publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
-    return updated;
-  }
 }

@@ -126,6 +126,7 @@ model Product {
   variants ProductVariant[]
   options  ProductOption[]
   items    OrderItem[]
+  bom      ProductBOM[]
 
   @@index([category_id])
   @@index([outlet_id])
@@ -232,6 +233,7 @@ model Order {
   items     OrderItem[]
   logs      OrderStatusLog[]
   payments  Payment[]
+  inventoryLogs InventoryLog[]
 
   @@index([user_id])
   @@index([status])
@@ -347,5 +349,45 @@ model InventoryItem {
   min_stock  Decimal  @default(0) @db.Decimal(12, 3)
   updated_at DateTime @updatedAt
 
+  bom        ProductBOM[]
+  logs       InventoryLog[]
+
   @@map("inventory_items")
+}
+
+model ProductBOM {
+  id              String   @id @default(uuid()) @db.Uuid
+  product_id      String   @db.Uuid
+  inventory_item_id String @db.Uuid
+  quantity        Decimal  @db.Decimal(12, 3)
+  unit            String
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+
+  product         Product        @relation(fields: [product_id], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem  @relation(fields: [inventory_item_id], references: [id], onDelete: Cascade)
+
+  @@unique([product_id, inventory_item_id])
+  @@map("product_bom")
+}
+
+model InventoryLog {
+  id              String      @id @default(uuid()) @db.Uuid
+  outlet_id       String?     @db.Uuid
+  inventory_item_id String    @db.Uuid
+  order_id        String?     @db.Uuid
+  type            String      // 'deduction' | 'restock' | 'adjustment'
+  quantity        Decimal     @db.Decimal(12, 3)
+  unit            String
+  note            String?
+  created_at      DateTime    @default(now())
+
+  inventoryItem   InventoryItem @relation(fields: [inventory_item_id], references: [id])
+  order           Order?        @relation(fields: [order_id], references: [id])
+
+  @@index([outlet_id])
+  @@index([inventory_item_id])
+  @@index([order_id])
+  @@index([created_at])
+  @@map("inventory_logs")
 }
