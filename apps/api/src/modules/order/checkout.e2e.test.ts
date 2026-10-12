@@ -21,6 +21,9 @@ vi.mock('../../config/redis.js', () => ({
     quit: async () => undefined,
   },
   redisQueue: { quit: async () => undefined },
+  // Sprint 4: order.service mem-publish event fan-out (order:created/status/cancelled).
+  redisPubSub: { publish: async () => 1 },
+  redisSubscriber: { on: () => undefined, subscribe: async () => undefined, unsubscribe: async () => undefined },
   pingRedis: async () => true,
 }));
 vi.mock('./sse.controller.js', () => ({
