@@ -228,9 +228,10 @@ model Order {
   created_at          DateTime        @default(now())
   updated_at          DateTime        @updatedAt
 
-  user   User?       @relation(fields: [user_id], references: [id])
-  items  OrderItem[]
-  logs   OrderStatusLog[]
+  user      User?        @relation(fields: [user_id], references: [id])
+  items     OrderItem[]
+  logs      OrderStatusLog[]
+  payments  Payment[]
 
   @@index([user_id])
   @@index([status])
@@ -289,10 +290,24 @@ model Payment {
   status         PaymentStatus @default(pending)
   transaction_id String?       @unique
   paid_at        DateTime?
+  raw_payload    Json?
   created_at     DateTime      @default(now())
+
+  order          Order          @relation(fields: [order_id], references: [id], onDelete: Cascade)
 
   @@index([order_id])
   @@map("payments")
+}
+
+model PaymentIdempotency {
+  id              String   @id @default(uuid()) @db.Uuid
+  idempotency_key String   @unique @map("idempotency_key")
+  provider        String
+  request_hash    String   @map("request_hash")
+  response        Json     // stores InitiatePaymentResult
+  created_at      DateTime @default(now()) @map("created_at")
+
+  @@map("payment_idempotency")
 }
 
 // ═══════════════ LOYALTY & VOUCHER ═══════════════

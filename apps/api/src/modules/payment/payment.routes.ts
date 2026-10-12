@@ -1,8 +1,17 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk, BadRequest } from '../../lib/http.js';
 import { optionalAuth } from '../../middleware/auth.js';
+import { PaymentService } from './payment.service.js';
 
 export const paymentRouter = Router();
+let paymentServiceInstance: PaymentService | null = null;
+
+async function getPaymentService(): Promise<PaymentService> {
+  if (!paymentServiceInstance) {
+    paymentServiceInstance = await PaymentService.create();
+  }
+  return paymentServiceInstance;
+}
 
 /** GET /api/v1/payments/methods — metode aktif (dari config). */
 paymentRouter.get('/methods', asyncHandler(async (_req, res) =>
@@ -11,16 +20,38 @@ paymentRouter.get('/methods', asyncHandler(async (_req, res) =>
 
 /** POST /api/v1/payments/initiate — mulai pembayaran (idempotent by Idempotency-Key). */
 paymentRouter.post('/initiate', optionalAuth, asyncHandler(async (req, res) => {
-  if (!req.body?.order_id) throw BadRequest('order_id wajib diisi');
-  sendOk(res, {
-    order_id: req.body.order_id,
-    provider: 'midtrans',
-    payment_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/${req.body.order_id}`,
-    expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-  }, 201);
+  const { order_id, amount, method, customer_email, customer_phone, customer_name, callback_url, metadata } = req.body;
+
+  if (!order_id) throw BadRequest('order_id wajib diisi');
+  if (!amount || amount <= 0) throw BadRequest('amount harus > 0');
+  if (!method) throw BadRequest('method wajib diisi');
+
+  const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
+
+  const paymentService = await getPaymentService();
+  const result = await paymentService.initiatePayment({
+    orderId: order_id,
+    amount,
+    method,
+    customerEmail: customer_email,
+    customerPhone: customer_phone,
+    customerName: customer_name,
+    callbackUrl: callback_url,
+    metadata,
+  }, idempotencyKey);
+
+  sendOk(res, result, 201);
 }));
 
 /** POST /api/v1/payments/webhook/:provider — callback gateway (verifikasi signature). */
-paymentRouter.post('/webhook/:provider', asyncHandler(async (req, res) =>
-  sendOk(res, { received: true, provider: req.params.provider }),
-));
+paymentRouter.post('/webhook/:provider', asyncHandler(async (req, res) => {
+  const providerName = req.params.provider;
+  // Midtrans sends signature_key in body, not header
+  const signatureKey = req.body?.signature_key as string | undefined;
+
+  const paymentService = await getPaymentService();
+  const verification = await paymentService.handleWebhook(providerName, req.body, signatureKey);
+
+  // Always return 200 for idempotent webhook
+  sendOk(res, { received: true, provider: providerName, status: verification.status });
+}));
