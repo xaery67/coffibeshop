@@ -210,32 +210,43 @@ export class CatalogService {
   }
 
   /** GET /catalog/products/:id — detail + varian + opsi. */
-  async product(id: string) {
-    if (!isValidUuid(id)) throw NotFound('Produk tidak ditemukan');
-    const key = CacheKeys.product(id);
-    const hit = await cacheGet<any>(key);
-    if (hit) return hit;
+    async product(id: string) {
+      if (!isValidUuid(id)) throw NotFound('Produk tidak ditemukan');
+      const key = CacheKeys.product(id);
+      const hit = await cacheGet<any>(key);
+      if (hit) return hit;
 
-    const product = await prisma.product.findUnique({
-      where: { id },
-      include: {
-        category: { select: { id: true, name: true, slug: true } },
-        variants: { where: { is_active: true }, orderBy: { sort_order: 'asc' } },
-        options: {
-          where: { is_active: true },
-          orderBy: { sort_order: 'asc' },
-          include: { values: { where: { is_active: true }, orderBy: { sort_order: 'asc' } } },
+      const product = await prisma.product.findUnique({
+        where: { id },
+        include: {
+          category: { select: { id: true, name: true, slug: true } },
+          variants: { where: { is_active: true }, orderBy: { sort_order: 'asc' } },
+          options: {
+            where: { is_active: true },
+            orderBy: { sort_order: 'asc' },
+            include: { values: { where: { is_active: true }, orderBy: { sort_order: 'asc' } } },
+          },
         },
-      },
-    });
-    if (!product || !product.is_active) throw NotFound('Produk tidak ditemukan');
+      });
+      if (!product || !product.is_active) throw NotFound('Produk tidak ditemukan');
 
-    const data = serializeProduct(product);
-    await cacheSet(key, data, TTL.PRODUCT);
-    return data;
-  }
+      const data = serializeProduct(product);
+      await cacheSet(key, data, TTL.PRODUCT);
+      return data;
+    }
 
-  // ─────────────────── ADMIN (tulis + invalidasi) ───────────────────
+    /** GET produk by ID tanpa cache (untuk validasi internal). */
+    async getProductById(id: string) {
+      if (!isValidUuid(id)) return null;
+      const product = await prisma.product.findUnique({
+        where: { id },
+        select: { id: true, image_url: true, outlet_id: true, is_active: true },
+      });
+      if (!product || !product.is_active) return null;
+      return product;
+    }
+
+    // ─────────────────── ADMIN (tulis + invalidasi) ───────────────────
 
   /** POST /catalog/products — buat produk (owner/manager). */
   async createProduct(input: any) {

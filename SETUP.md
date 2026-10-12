@@ -117,6 +117,46 @@ npx prisma migrate deploy   # memakai DIRECT_URL
 npx prisma db seed
 ```
 
+### 3.5 Supabase Storage (untuk upload gambar produk — Issue #15)
+
+Endpoint upload: `POST /api/v1/catalog/products/:id/image` (RBAC owner/manager).
+
+1. **Buat bucket di dashboard Supabase**
+   - Buka **Storage → Create bucket**
+   - Nama: `cs-dev-products` (atau sesuai `SUPABASE_STORAGE_BUCKET` di `.env`)
+   - Public: **YES** (agar public URL bisa diakses frontend)
+   - File size limit: `5MB` (opsional, validasi juga di backend)
+   - Allowed MIME types: `image/jpeg`, `image/png`, `image/webp` (opsional, validasi juga di backend)
+
+2. **Isi kredensial di `.env` / `apps/api/.env`**
+   ```env
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_SERVICE_ROLE_KEY=<service-role-key>   # HANYA backend!
+   ```
+
+3. **Verifikasi konfigurasi**
+   ```bash
+   node scripts/verify-supabase.mjs
+   ```
+   Skrip melakukan:
+   - **Ping REST API** (list buckets)
+   - **Cek bucket** `SUPABASE_STORAGE_BUCKET` (default `cs-dev-products`) ada
+   - **Upload + delete** file test round-trip
+
+   **Exit code:**
+   - `0` = semua lolos
+   - `1` = kegagalan nyata (bucket tidak ada, kredensial salah, network error)
+   - `2` = **SKIP** (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY belum diisi)
+
+4. **Behavior endpoint**
+   - Multipart form field: `image`
+   - Max size: 5MB (multer + manual check)
+   - MIME: `image/jpeg` (ext `.jpg`), `image/png` (`.png`), `image/webp` (`.webp`)
+   - Path di bucket: `products/{productId}/{timestamp}.{ext}`
+   - Response: `{ product_id, image_url, product }` — `image_url` disimpan ke `Product.image_url`
+   - Bila Supabase belum dikonfigurasi → 503 SERVICE_UNAVAILABLE dengan pesan jelas
+   - RBAC: hanya `owner` & `manager` yang boleh upload
+
 ---
 
 ## 4. Upstash Redis
