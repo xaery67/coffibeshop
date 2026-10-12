@@ -222,11 +222,88 @@ export class AuthService {
   // ─────────────────────────── HELPERS ───────────────────────────
   /** Merge guest cart (ADR-011) + hitung jumlah item setelah merge. */
   private async mergeCartIfAny(userId: string, guestId?: string) {
-    let merged = false;
-    if (guestId) {
-      merged = await mergeGuestCart(userId, guestId).catch(() => false);
+      let merged = false;
+      if (guestId) {
+        merged = await mergeGuestCart(userId, guestId).catch(() => false);
+      }
+      const items = await readCart(memberKey(userId)).catch(() => []);
+      return { merged, count: items.length };
     }
-    const items = await readCart(memberKey(userId)).catch(() => []);
-    return { merged, count: items.length };
+
+    // ─────────────────────────── ADDRESS BOOK (ADR-013) ───────────────────────────
+  
+    /** GET /api/v1/auth/me/addresses — daftar alamat, default di atas. */
+    async getAddresses(userId: string) {
+      return prisma.address.findMany({
+        where: { user_id: userId },
+        orderBy: [{ is_default: 'desc' }, { created_at: 'desc' }],
+      });
+    }
+
+    /** POST /api/v1/auth/me/addresses — tambah alamat. is_default exclusive per user. */
+    async createAddress(userId: string, input: any) {
+      // If setting as default, unset other defaults first
+      if (input.is_default) {
+        await prisma.address.updateMany({
+          where: { user_id: userId, is_default: true },
+          data: { is_default: false },
+        });
+      }
+      return prisma.address.create({
+        data: {
+          user_id: userId,
+          label: input.label,
+          recipient_name: input.recipient_name,
+          phone: input.phone,
+          address_line: input.address_line,
+          city: input.city,
+          postal_code: input.postal_code,
+          latitude: input.latitude ?? null,
+          longitude: input.longitude ?? null,
+          is_default: input.is_default ?? false,
+        },
+      });
+    }
+
+    /** PUT /api/v1/auth/me/addresses/:id — update alamat milik user. */
+    async updateAddress(userId: string, addressId: string, input: any) {
+      const address = await prisma.address.findFirst({
+        where: { id: addressId, user_id: userId },
+      });
+      if (!address) throw NotFound('Alamat tidak ditemukan');
+
+      // If setting as default, unset other defaults first
+      if (input.is_default) {
+        await prisma.address.updateMany({
+          where: { user_id: userId, is_default: true, NOT: { id: addressId } },
+          data: { is_default: false },
+        });
+      }
+
+      return prisma.address.update({
+        where: { id: addressId },
+        data: {
+          ...(input.label !== undefined ? { label: input.label } : {}),
+          ...(input.recipient_name !== undefined ? { recipient_name: input.recipient_name } : {}),
+          ...(input.phone !== undefined ? { phone: input.phone } : {}),
+          ...(input.address_line !== undefined ? { address_line: input.address_line } : {}),
+          ...(input.city !== undefined ? { city: input.city } : {}),
+          ...(input.postal_code !== undefined ? { postal_code: input.postal_code } : {}),
+          ...(input.latitude !== undefined ? { latitude: input.latitude } : {}),
+          ...(input.longitude !== undefined ? { longitude: input.longitude } : {}),
+          ...(input.is_default !== undefined ? { is_default: input.is_default } : {}),
+        },
+      });
+    }
+
+    /** DELETE /api/v1/auth/me/addresses/:id — hapus alamat milik user. */
+    async deleteAddress(userId: string, addressId: string) {
+      const address = await prisma.address.findFirst({
+        where: { id: addressId, user_id: userId },
+      });
+      if (!address) throw NotFound('Alamat tidak ditemukan');
+
+      await prisma.address.delete({ where: { id: addressId } });
+      return { message: 'Alamat berhasil dihapus' };
+    }
   }
-}

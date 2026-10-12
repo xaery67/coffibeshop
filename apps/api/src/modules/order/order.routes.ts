@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk, BadRequest } from '../../lib/http.js';
 import { optionalAuth, requireAuth, getGuestId, requireRole } from '../../middleware/auth.js';
+import { sseRateLimit } from '../../middleware/sseRateLimit.js';
 import { OrderService } from './order.service.js';
 import { streamOrderEvents } from './sse.controller.js';
 
@@ -99,7 +100,7 @@ orderRouter.get(
 );
 
 /** GET /api/v1/orders/track/:token/events — SSE guest (PUBLIK). */
-orderRouter.get('/track/:token/events', streamOrderEvents);
+orderRouter.get('/track/:token/events', sseRateLimit(), streamOrderEvents);
 
 /** GET /api/v1/orders/:id */
 orderRouter.get(
@@ -109,7 +110,7 @@ orderRouter.get(
 );
 
 /** GET /api/v1/orders/:id/events — SSE member (ADR-009). */
-orderRouter.get('/:id/events', requireAuth, streamOrderEvents);
+orderRouter.get('/:id/events', requireAuth, sseRateLimit(), streamOrderEvents);
 
 /** POST /api/v1/orders/:id/reorder — reorder 1-klik (ADR-010). */
 orderRouter.post(

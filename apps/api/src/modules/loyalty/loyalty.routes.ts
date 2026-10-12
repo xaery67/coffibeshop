@@ -1,12 +1,49 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk } from '../../lib/http.js';
+import { requireAuth } from '../../middleware/auth.js';
+import { validate } from '../../middleware/validate.js';
+import { LoyaltyService } from './loyalty.service.js';
+import { z } from 'zod';
 
-/**
- * Loyalty — kerangka domain service (PRD-BACKEND §2).
- * Implementasi detail mengikuti sprint plan (docs/SPRINT-PLAN.md).
- */
 export const loyaltyRouter = Router();
+const service = new LoyaltyService();
 
+/** Zod schema for redeem request. */
+const RedeemInput = z.object({
+  points_to_redeem: z.number().int().min(1, 'points_to_redeem minimal 1'),
+});
+
+/** GET /api/v1/loyalty/_status — health check. */
 loyaltyRouter.get('/_status', asyncHandler(async (_req, res) =>
-  sendOk(res, { service: 'loyalty', status: 'scaffolded' }),
+  sendOk(res, { service: 'loyalty', status: 'ok' }),
 ));
+
+/** GET /api/v1/loyalty/points — saldo poin member. */
+loyaltyRouter.get(
+  '/points',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const points = await service.getPoints((req as any).user.id);
+    sendOk(res, points);
+  }),
+);
+
+/** GET /api/v1/loyalty/vouchers — daftar voucher aktif (termasuk loyalty vouchers). */
+loyaltyRouter.get(
+  '/vouchers',
+  asyncHandler(async (_req, res) => {
+    const vouchers = await service.getVouchers();
+    sendOk(res, vouchers);
+  }),
+);
+
+/** POST /api/v1/loyalty/redeem — tukar poin ke voucher. */
+loyaltyRouter.post(
+  '/redeem',
+  requireAuth,
+  validate(RedeemInput),
+  asyncHandler(async (req, res) => {
+    const result = await service.redeemPoints((req as any).user.id, req.body.points_to_redeem);
+    sendOk(res, result, 201);
+  }),
+);

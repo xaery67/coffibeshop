@@ -285,32 +285,130 @@ export class OrderService {
     };
   }
 
-  /** Reorder 1-klik (ADR-010) — kembalikan CartItemDTO pre-filled. */
-  async reorder(userId: string, orderId: string) {
-    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
-    if (!order) throw NotFound('Order tidak ditemukan');
-    if (order.user_id && order.user_id !== userId) throw Forbidden();
-    return { items: order.items };
-  }
+  /** Reorder 1-klik (ADR-010) — kembalikan CartItemDTO pre-filled dengan harga & stok terkini. */
+    async reorder(userId: string, orderId: string) {
+      const order = await prisma.order.findUnique({ 
+        where: { id: orderId }, 
+        include: { 
+          items: {
+            include: {
+              product: {
+                include: {
+                  variants: true,
+                  options: { include: { values: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!order) throw NotFound('Order tidak ditemukan');
+      if (order.user_id && order.user_id !== userId) throw Forbidden();
+
+      // Verify each item is still available and get current pricing
+      const cartItems = [];
+      for (const item of order.items) {
+        const product = item.product;
+        if (!product || !product.is_available || !product.is_active) {
+          continue; // Skip unavailable products
+        }
+
+        // Check variant if applicable - fetch from product variants
+                let variant = null;
+                if (item.variant_id && product.variants.length > 0) {
+                  variant = product.variants.find((v: any) => v.id === item.variant_id);
+                  if (!variant || !variant.is_active) {
+                    continue;
+                  }
+                }
+
+                // Check options availability
+                                const validOptions: any[] = [];
+                                const itemOptions = item.options as any[] | undefined;
+                if (itemOptions?.length) {
+                  const allValues = product.options.flatMap((o: any) => o.values);
+                  for (const opt of itemOptions) {
+                    const v = allValues.find((x: any) => x.id === opt.option_value_id);
+                    if (v && v.is_active) {
+                      validOptions.push({
+                        option_value_id: v.id,
+                        name: v.value,
+                        price_adjustment: Number(v.price_adjustment),
+                      });
+                    }
+                  }
+                }
+
+                // Calculate current price
+        let unitPrice = Number(product.base_price);
+        if (variant) unitPrice += Number(variant.price_delta);
+        if (validOptions.length) {
+          unitPrice += validOptions.reduce((sum: number, o: any) => sum + o.price_adjustment, 0);
+        }
+
+        cartItems.push({
+          id: item.id,
+          product_id: item.product_id,
+          variant_id: item.variant_id ?? null,
+          option_ids: validOptions.map((o: any) => o.option_value_id),
+          qty: item.qty,
+          notes: item.notes ?? null,
+          unit_price: unitPrice,
+          line_total: unitPrice * item.qty,
+          product_name: product.name,
+          unavailable: false,
+        });
+      }
+
+      return { items: cartItems };
+    }
 
   /** Customer cancel (ADR-012) — hanya PENDING/PAID. */
-  async cancel(userId: string | undefined, orderId: string, reason?: string) {
-    const order = await prisma.order.findUnique({ where: { id: orderId } });
-    if (!order) throw NotFound('Order tidak ditemukan');
-    if (order.user_id && order.user_id !== userId) throw Forbidden();
-    if (!['PENDING', 'PAID'].includes(order.status)) {
-      throw Conflict(`Order berstatus ${order.status} tidak bisa dibatalkan customer`);
+    async cancel(userId: string | undefined, orderId: string, reason?: string) {
+      const order = await prisma.order.findUnique({ where: { id: orderId } });
+      if (!order) throw NotFound('Order tidak ditemukan');
+      if (order.user_id && order.user_id !== userId) throw Forbidden();
+    
+      // State machine guard: only allow cancellation from PENDING or PAID
+      const allowedStatuses = ['PENDING', 'PAID'];
+      if (!allowedStatuses.includes(order.status)) {
+        throw Conflict(`Order berstatus ${order.status} tidak bisa dibatalkan customer`);
+      }
+
+      const updated = await prisma.$transaction(async (tx) => {
+        const o = await tx.order.update({
+          where: { id: orderId },
+          data: { status: 'CANCELLED', cancel_reason: reason ?? null },
+        });
+
+        // Add to OrderStatusLog
+        await tx.orderStatusLog.create({
+          data: {
+            order_id: orderId,
+            to_status: 'CANCELLED',
+            note: reason ?? 'Dibatalkan oleh customer',
+            changed_by: userId ?? null,
+          },
+        });
+
+        // If PAID, enqueue refund job (async via BullMQ)
+                if (order.status === 'PAID') {
+                  const { queues } = await import('../../queue/queues.js');
+                  await queues.payment.add('refund', {
+                    orderId: order.id,
+                    amount: Number(order.total),
+                    reason: reason ?? 'Customer cancelled',
+                  }).catch((err) => {
+                    console.warn('Failed to enqueue refund job:', err);
+                  });
+                }
+
+        return o;
+      });
+
+      publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
+      return updated;
     }
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: { status: 'CANCELLED', cancel_reason: reason ?? null },
-    });
-    if (order.status === 'PAID') {
-      // Phase 2: enqueue refund async
-    }
-    publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
-    return updated;
-  }
 
   async updateStatus(orderId: string, body: any) {
     // Validasi transisi status kanonik
