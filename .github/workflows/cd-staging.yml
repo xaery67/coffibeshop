@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   deploy-staging:
     name: Deploy to staging
@@ -56,3 +59,22 @@ jobs:
         run: |
           echo "TODO - kubectl set image / helm upgrade"
           echo "Lihat docs/PRD-BACKEND-DEVOPS.md section 3"
+
+      # ── SMOKE TEST STAGE (issue #17) ─────────────────────────────────────
+      # Setelah deploy, tunggu container healthy lalu hit /health + 1 endpoint
+      # katalog. Gagal => job merah (blok promote ke prod).
+      - name: Smoke test (staging)
+        if: steps.check.outputs.configured == 'true'
+        env:
+          STAGING_BASE_URL: ${{ secrets.STAGING_BASE_URL }}
+          SMOKE_WAIT_SECONDS: '90'
+        run: |
+          if [ -z "$STAGING_BASE_URL" ]; then
+            echo "::warning::STAGING_BASE_URL belum diset - smoke test dilewati"
+            exit 0
+          fi
+          bash scripts/smoke-test.sh
+
+      - name: Smoke test skipped notice
+        if: steps.check.outputs.configured != 'true'
+        run: echo "::notice::Smoke test dilewati (registry belum dikonfigurasi)"

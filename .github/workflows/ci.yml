@@ -10,6 +10,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint-test-build:
     name: Lint · Test · Build
@@ -41,8 +44,99 @@ jobs:
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/db
 
-  docker:
-    name: Docker build & scan
+  # ── GATE #1: migration drift & index pg_trgm (issue #17, PRIORITAS) ──────
+  # Bug nyata: folder migration drift menghapus 2 index pg_trgm di SETIAP
+  # deployment baru dan tak terdeteksi CI. Job ini mereproduksi deployment
+  # dari nol & GAGAL kalau index hilang atau schema drift.
+  migration-drift:
+    name: Migration drift & pg_trgm gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Migration drift & pg_trgm gate
+        run: bash scripts/ci-migration-check.sh
+
+  # ── GATE #2: coverage report (api & web) — artifact + step summary ───────
+  coverage:
+    name: Coverage report
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Build shared
+        run: npm run build --workspace=@coffibeshop/shared
+
+      - name: Generate Prisma client
+        run: npm run db:generate --workspace=@coffibeshop/api --if-present
+
+      - name: Coverage — API
+        run: npm run test --workspace=@coffibeshop/api -- --coverage
+
+      - name: Coverage — Web
+        run: npm run test --workspace=@coffibeshop/web -- --coverage
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            apps/api/coverage/
+            apps/web/coverage/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          {
+            echo "### 📊 Coverage (issue #17)";
+            echo "";
+            echo "| Workspace | Laporan |";
+            echo "|-----------|---------|";
+            echo "| API | \`apps/api/coverage/lcov.info\` |";
+            echo "| Web | \`apps/web/coverage/lcov.info\` |";
+            echo "";
+            echo "Artifact: **coverage** (retensi 14 hari).";
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── GATE #3: security scan (Trivy) — image api/web + filesystem, fail-on-high
+  docker-scan:
+    name: Docker build & Trivy scan
     runs-on: ubuntu-latest
     needs: lint-test-build
     steps:
@@ -72,22 +166,47 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Trivy scan (API)
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: coffibeshop/api:ci
-          format: table
-          exit-code: '0'
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
+      # Catatan: memakai image resmi aquasec/trivy via `docker run` (bukan
+      # aquasecurity/trivy-action) agar tidak bergantung pada wrapper action yang
+      # versinya bisa hilang. Gate fail-on-high (--exit-code 1).
+      #
+      # Cakupan scan:
+      #  - Image: lapisan OS (`--pkg-types os`) — di sinilah baseline .trivyignore
+      #    berlaku (CVE base image distroless/nginx yang belum bisa ditambal).
+      #  - Filesystem: dependency produksi repo (lockfile).
+      # TEMUAN TERBUKA (follow-up, di luar scope #17): image API ikut membawa
+      # devDependencies (vite/vitest/tinypool) + binary esbuild karena
+      # `apps/api/Dockerfile` meng-copy seluruh `node_modules` dari builder.
+      # Perbaikannya = `npm prune --omit=dev` di stage builder; belum dilakukan
+      # agar tidak menyentuh file di luar scope. Lihat docs/DEVOPS.md.
+      - name: Trivy scan (API image — OS layer)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            aquasec/trivy:latest image --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+              --pkg-types os \
+              coffibeshop/api:ci
 
-      - name: Trivy scan (Web)
-        continue-on-error: true
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: coffibeshop/web:ci
-          format: table
-          exit-code: '0'
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
+      - name: Trivy scan (Web image — OS layer)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            aquasec/trivy:latest image --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
+              --pkg-types os \
+              coffibeshop/web:ci
+
+      - name: Trivy scan (filesystem / dependency produksi)
+        run: |
+          docker run --rm \
+            -v "$PWD:/src:ro" \
+            -v "$PWD/.trivyignore:/tmp/.trivyignore:ro" \
+            -w /src aquasec/trivy:latest fs --quiet \
+              --ignorefile /tmp/.trivyignore \
+              --severity CRITICAL,HIGH --ignore-unfixed --scanners vuln \
+              --exit-code 1 .
