@@ -71,6 +71,14 @@ services:
       MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
       MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
       MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
+      # ── Supabase (issue #15) — diisi user di .env; kosong = Storage nonaktif ──
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-cs-dev-products}
+      # ── Queue monitoring (issue #16) ──
+      QUEUE_ALERT_THRESHOLD: ${QUEUE_ALERT_THRESHOLD:-1000}
       # Business config (dapat di-override lewat .env)
       TAX_RATE: ${TAX_RATE:-0.11}
       POINT_VALUE: ${POINT_VALUE:-1}

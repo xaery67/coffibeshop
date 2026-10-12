@@ -18,6 +18,7 @@ const EnvSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   SUPABASE_JWT_SECRET: z.string().optional(),
+  SUPABASE_STORAGE_BUCKET: z.string().default('cs-dev-products'),
 
   // Database
   DATABASE_URL: z.string().optional(),
@@ -26,6 +27,8 @@ const EnvSchema = z.object({
   // Redis
   REDIS_CACHE_URL: z.string().optional(),
   REDIS_QUEUE_URL: z.string().optional(),
+  QUEUE_ALERT_THRESHOLD: z.coerce.number().default(1000),
+  QUEUE_MONITOR_INTERVAL_MS: z.coerce.number().default(60_000),
 
   // JWT — RS256 (asimetris, ADR-005)
   JWT_PRIVATE_KEY: z.string().optional(),
@@ -54,7 +57,13 @@ const EnvSchema = z.object({
   TRACKING_POLL_INTERVAL_MS: z.coerce.number().default(3000),
 });
 
-const parsed = EnvSchema.safeParse(process.env);
+// .env boleh memuat nilai kosong (mis. `SUPABASE_URL=` belum diisi user) —
+// perlakukan sebagai UNSET agar default/opsional schema tetap berlaku,
+// bukan gagal validasi `.url()`.
+const rawEnv = Object.fromEntries(
+  Object.entries(process.env).filter(([, v]) => v !== undefined && v !== ''),
+);
+const parsed = EnvSchema.safeParse(rawEnv);
 if (!parsed.success) {
   console.error('❌ Invalid environment variables:', parsed.error.flatten().fieldErrors);
   process.exit(1);
