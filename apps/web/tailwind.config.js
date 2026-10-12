@@ -28,16 +28,26 @@ export default {
         border: '#E5DED6',
       },
       fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-      // Skala tipografi mobile — PRD-FRONTEND-UX §3.2 (size/line-height).
+      // Skala tipografi mobile — DESIGN-SYSTEM.md §2 (size/line-height).
+      // `sm` = Tailwind default (14/20). `caption` (12/16) & `price` (16/20·700) ditambahkan (#11, M2).
       fontSize: {
         display: ['1.75rem', { lineHeight: '2.125rem', fontWeight: '700' }],
         h1: ['1.5rem', { lineHeight: '1.875rem', fontWeight: '700' }],
         h2: ['1.25rem', { lineHeight: '1.625rem', fontWeight: '600' }],
         h3: ['1rem', { lineHeight: '1.375rem', fontWeight: '600' }],
         body: ['0.875rem', { lineHeight: '1.25rem' }],
+        caption: ['0.75rem', { lineHeight: '1rem' }],
+        price: ['1rem', { lineHeight: '1.25rem', fontWeight: '700' }],
       },
       spacing: { 1: '4px' },
       borderRadius: { card: '12px', pill: '999px' },
+      // Elevasi — DESIGN-SYSTEM.md §4 (token shadow, bukan hardcode; #11 M1).
+      boxShadow: {
+        elev1: '0 1px 2px rgba(0,0,0,0.06)',
+        elev2: '0 -4px 16px rgba(0,0,0,0.10)',
+        hover: '0 4px 16px rgba(0,0,0,0.08)',
+        'elev-fab': '0 4px 16px rgba(0,0,0,0.18)', // R4: token FAB (sebelumnya hardcode)
+      },
     },
   },
   plugins: [],

@@ -43,7 +43,7 @@ export function ErrorState({
       </span>
       <p className="text-sm text-text">{message}</p>
       {onRetry && (
-        <Button variant="secondary" size="sm" onClick={onRetry}>
+        <Button variant="secondary" size="md" onClick={onRetry}>
           Coba lagi
         </Button>
       )}

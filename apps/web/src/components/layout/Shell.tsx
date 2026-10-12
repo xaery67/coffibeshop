@@ -1,11 +1,12 @@
 import { NavLink, Link } from 'react-router-dom';
 import { useCartStore } from '../../stores/cart.store.js';
 
+// M9 (audit): nav hanya untuk halaman yang SUDAH ada & patuh. `/orders`, `/profile`
+// (Sprint 3/#12) dan `/track` (TrackPage masih non-token — audit T2/T3/T4, Sprint 3)
+// tidak ditampilkan agar tidak ada tautan menyesatkan / halaman belum patuh.
 const NAV = [
   { to: '/', label: 'Home', end: true },
   { to: '/menu', label: 'Menu' },
-  { to: '/orders', label: 'Pesanan' },
-  { to: '/profile', label: 'Profil' },
 ];
 
 /** Header + navigasi utama CustomerShell (PRD-FRONTEND §2.1). */
@@ -46,7 +47,7 @@ export function CartFAB() {
     <Link
       to="/cart"
       aria-label={`Keranjang, ${count} item`}
-      className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-brand-fg shadow-[0_4px_16px_rgba(0,0,0,0.18)] transition hover:bg-brand-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+      className="fixed bottom-6 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-brand-fg shadow-elev-fab transition hover:bg-brand-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
       style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
     >
       <span aria-hidden="true" className="text-xl">
