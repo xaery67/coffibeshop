@@ -170,16 +170,16 @@ jobs:
       # aquasecurity/trivy-action) agar tidak bergantung pada wrapper action yang
       # versinya bisa hilang. Gate fail-on-high (--exit-code 1).
       #
-      # Cakupan scan:
-      #  - Image: lapisan OS (`--pkg-types os`) — di sinilah baseline .trivyignore
-      #    berlaku (CVE base image distroless/nginx yang belum bisa ditambal).
+      # Cakupan scan (diperluas di issue #49):
+      #  - Image: SELURUH lapisan (`--pkg-types os,library`) — OS + dependency
+      #    aplikasi. Baseline .trivyignore berlaku untuk CVE base image
+      #    (distroless/nginx) yang belum bisa ditambal.
       #  - Filesystem: dependency produksi repo (lockfile).
-      # TEMUAN TERBUKA (follow-up, di luar scope #17): image API ikut membawa
-      # devDependencies (vite/vitest/tinypool) + binary esbuild karena
-      # `apps/api/Dockerfile` meng-copy seluruh `node_modules` dari builder.
-      # Perbaikannya = `npm prune --omit=dev` di stage builder; belum dilakukan
-      # agar tidak menyentuh file di luar scope. Lihat docs/DEVOPS.md.
-      - name: Trivy scan (API image — OS layer)
+      # Sebelum #49, image API membawa devDependencies (vite/vitest/tinypool) +
+      # esbuild karena `apps/api/Dockerfile` meng-copy seluruh `node_modules`.
+      # Kini di-prune (`npm prune --omit=dev`) sehingga scan full tetap hijau —
+      # gate dinaikkan ke `os,library` agar regresi devDeps tertangkap.
+      - name: Trivy scan (API image)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -187,10 +187,10 @@ jobs:
             aquasec/trivy:latest image --quiet \
               --ignorefile /tmp/.trivyignore \
               --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
-              --pkg-types os \
+              --pkg-types os,library \
               coffibeshop/api:ci
 
-      - name: Trivy scan (Web image — OS layer)
+      - name: Trivy scan (Web image)
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
@@ -198,7 +198,7 @@ jobs:
             aquasec/trivy:latest image --quiet \
               --ignorefile /tmp/.trivyignore \
               --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 \
-              --pkg-types os \
+              --pkg-types os,library \
               coffibeshop/web:ci
 
       - name: Trivy scan (filesystem / dependency produksi)

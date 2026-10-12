@@ -19,6 +19,12 @@ RUN npm run build --workspace=@coffibeshop/shared \
  && npm run db:generate --workspace=@coffibeshop/api \
  && npm run build --workspace=@coffibeshop/api
 
+# Buang devDependencies (vite/vitest/esbuild/tsx/typescript, dll) SEBELUM runtime
+# men-copy node_modules, supaya image runtime hanya membawa dependency produksi.
+# Yang dipertahankan: @prisma/client + node_modules/.prisma/client (hasil
+# `prisma generate` di atas), @coffibeshop/shared, ws, dan dependency runtime lain.
+RUN npm prune --omit=dev
+
 # ── Stage 2: runtime (distroless, non-root) ──
 FROM gcr.io/distroless/nodejs20-debian12 AS runner
 WORKDIR /app

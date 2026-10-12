@@ -22,7 +22,7 @@
 | 2 | **`migration-drift`** | Postgres bersih → `prisma migrate deploy` → cek **index pg_trgm** + drift schema | **index `products_name_trgm_idx` / `products_description_trgm_idx` hilang**, atau schema≠migrations |
 | 3 | `coverage` | Coverage api & web | (belum fail — dilaporkan + artifact) |
 | 4 | `docker` | Build image api/web | build gagal |
-| 5 | **`trivy`** | Scan image (api/web **OS layer**) + filesystem (dependency produksi) | ada CVE **HIGH/CRITICAL** yang **tidak** ada di baseline (`.trivyignore`) |
+| 5 | **`trivy`** | Scan image (api/web **OS + library**) + filesystem (dependency produksi) | ada CVE **HIGH/CRITICAL** yang **tidak** ada di baseline (`.trivyignore`) |
 
 > **Kenapa gate migration-drift ada?** Bug nyata: folder migration yang *drift* menghapus 2 index pg_trgm di **setiap deployment baru** dan tidak terdeteksi CI (pencarian jadi lambat tanpa error). Gate ini mereproduksi deployment dari nol dan **gagal** kalau index hilang.
 
@@ -47,13 +47,13 @@ npm run build
 #    Spin Postgres bersih, terapkan semua migration, verifikasi index pg_trgm.
 bash scripts/ci-migration-check.sh
 
-# 3) Trivy (image OS layer + dependency produksi)
+# 3) Trivy (image full: OS + library + dependency produksi)
 docker build -f apps/api/Dockerfile -t coffibeshop/api:ci .
 docker build -f apps/web/Dockerfile -t coffibeshop/web:ci .
 docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PWD/.trivyignore:/tmp/.trivyignore" aquasec/trivy:latest image \
   --ignorefile /tmp/.trivyignore --severity HIGH,CRITICAL --ignore-unfixed \
-  --exit-code 1 --pkg-types os coffibeshop/api:ci
+  --exit-code 1 --pkg-types os,library coffibeshop/api:ci
 docker run --rm -v "$PWD:/src" -w /src aquasec/trivy:latest fs \
   --ignorefile /src/.trivyignore --severity HIGH,CRITICAL --ignore-unfixed \
   --exit-code 1 .
@@ -86,7 +86,7 @@ Menambah index/kolom baru? Pastikan **selalu** lewat folder migration (`prisma m
 ## 4. Security Scan (Trivy)
 
 - **Scope:**
-  - **Image `api` & `web` — lapisan OS** (`--pkg-types os`). Di sinilah CVE base image (distroless/nginx) terdeteksi dan baseline `.trivyignore` berlaku.
+  - **Image `api` & `web` — SELURUH lapisan** (`--pkg-types os,library`): OS + dependency aplikasi.
   - **Filesystem — dependency produksi** (lockfile npm), untuk menangkap CVE dependency aplikasi.
 - **Severity:** `HIGH,CRITICAL`, `--ignore-unfixed` (hanya CVE yang punya perbaikan).
 - **Fail-on-high:** `--exit-code 1` → CI **merah** kalau ada temuan baru.
@@ -97,14 +97,13 @@ Menambah index/kolom baru? Pastikan **selalu** lewat folder migration (`prisma m
   2. Update dependensi (`npm audit fix`, bump versi) atau base image (butuh perubahan `Dockerfile` → koordinasi @backend-engineer / @qa).
   3. Kalau benar-benar belum ada fix, tambahkan ke `.trivyignore` **dengan komentar + tanggal** (review berkala).
 
-### ⚠️ Temuan terbuka (follow-up, di luar scope #17)
+### ✅ DevDependencies di image API — SELESAI (issue #49)
 
-Saat scan awal, image **API** terdeteksi membawa **devDependencies** (`vite`, `vitest`, `tinypool` — 3 CRITICAL + 1 HIGH) **dan** binary Go `esbuild`. Penyebabnya: `apps/api/Dockerfile` meng-copy **seluruh** `node_modules` dari stage builder ke stage runtime (baris `COPY --from=builder /app/node_modules ./node_modules`).
+Ditemukan saat #17: image **API** membawa **devDependencies** (`vite`, `vitest`, `tinypool` — 3 CRITICAL + 1 HIGH) + binary Go `esbuild`, karena `apps/api/Dockerfile` meng-copy **seluruh** `node_modules` dari builder ke runtime.
 
-- **Dampak:** image lebih besar (≈594 MB) & permukaan serangan bertambah (paket test tidak perlu ada di runtime).
-- **Perbaikan yang disarankan:** tambahkan `RUN npm prune --omit=dev` di stage builder **sebelum** copy, atau install ulang dependency produksi di stage runtime. Menyentuh `Dockerfile` → **di luar scope #17** (wilayah @backend-engineer), jadi belum diubah.
-- **Kenapa gate tetap hijau:** gate image saat ini men-scan **lapisan OS**; temuan devDeps bukan di lapisan itu. Begitu Dockerfile diperbaiki, gate bisa dinaikkan ke `--pkg-types os,library` tanpa baseline baru.
-- **Aksi:** buat issue follow-up untuk prune devDeps + naikkan cakupan gate.
+- **Perbaikan:** `RUN npm prune --omit=dev` di stage builder **sebelum** copy `node_modules`. Aman karena `@prisma/client` + `node_modules/.prisma/client` (hasil `prisma generate`), `@coffibeshop/shared`, `ws`, dan dependency runtime lain tetap ada.
+- **Hasil:** ukuran image **626 MB → 472 MB** (−154 MB / −24,6%); temuan `vite`/`vitest`/`tinypool`/`esbuild` **hilang total**; gate image dinaikkan ke `--pkg-types os,library` supaya regresi devDeps **tertangkap**.
+- **Dampak ke gate:** scan image kini mencakup dependency aplikasi, bukan hanya OS.
 
 ---
 
