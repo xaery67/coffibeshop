@@ -1,12 +1,13 @@
 import { NavLink, Link } from 'react-router-dom';
 import { useCartStore } from '../../stores/cart.store.js';
 
-// M9 (audit): nav hanya untuk halaman yang SUDAH ada & patuh. `/orders`, `/profile`
-// (Sprint 3/#12) dan `/track` (TrackPage masih non-token — audit T2/T3/T4, Sprint 3)
-// tidak ditampilkan agar tidak ada tautan menyesatkan / halaman belum patuh.
+// M9 (audit): nav hanya untuk halaman yang SUDAH ada & patuh.
+// Sprint 3 (#12): `/orders` (riwayat + reorder) & `/profile` (loyalty + alamat) aktif.
 const NAV = [
   { to: '/', label: 'Home', end: true },
   { to: '/menu', label: 'Menu' },
+  { to: '/orders', label: 'Pesanan' },
+  { to: '/profile', label: 'Profil' },
 ];
 
 /** Header + navigasi utama CustomerShell (PRD-FRONTEND §2.1). */
