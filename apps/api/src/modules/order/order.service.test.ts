@@ -13,6 +13,8 @@ const h = vi.hoisted(() => ({
   loyalty: [] as any[],
   products: [] as any[],
   vouchers: [] as any[],
+  inventoryItems: [] as any[],
+  productBOMs: [] as any[],
   store: new Map<string, string>(),
   events: [] as any[],
   queueAdds: [] as any[],
@@ -95,11 +97,35 @@ vi.mock('../../config/prisma.js', () => {
       },
     },
     product: {
-      findMany: async ({ where }: any = {}) => {
-        const ids: string[] = where?.id?.in ?? [];
-        return h.products.filter((p) => ids.includes(p.id));
-      },
-    },
+          findMany: async ({ where: _where }: any = {}) => {
+            const ids: string[] = _where?.id?.in ?? [];
+            return h.products.filter((p) => ids.includes(p.id));
+          },
+        },
+        productBOM: {
+                          findMany: async ({ where: _where }: any = {}) => {
+                            // Return BOMs from h.productBOMs for the given product_id
+                            // Include inventoryItem relation by looking up from h.inventoryItems
+                            return h.productBOMs
+                              .filter((bom) => bom.product_id === _where?.product_id)
+                              .map((bom) => {
+                                const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
+                                return {
+                                  ...bom,
+                                  inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
+                                };
+                              });
+                          },
+                        },
+        inventoryItem: {
+                  findUnique: async ({ where: _where }: any = {}) => {
+                    // Return mock inventory item from h.inventoryItems if available
+                    const item = h.inventoryItems.find((inv) => inv.id === _where.id);
+                    if (item) return item;
+                    // Return mock inventory item with sufficient stock as fallback
+                    return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
+                  },
+                },
   };
 
   const prisma = {
@@ -160,6 +186,30 @@ vi.mock('../../config/prisma.js', () => {
         return { _sum: { points: rows.reduce((s, r) => s + r.points, 0) } };
       },
     },
+    productBOM: {
+                      findMany: async ({ where: _where }: any = {}) => {
+                        // Return BOMs from h.productBOMs for the given product_id
+                        // Include inventoryItem relation by looking up from h.inventoryItems
+                        return h.productBOMs
+                          .filter((bom) => bom.product_id === _where?.product_id)
+                          .map((bom) => {
+                            const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
+                            return {
+                              ...bom,
+                              inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
+                            };
+                          });
+                      },
+                    },
+        inventoryItem: {
+                  findUnique: async ({ where: _where }: any = {}) => {
+                    // Return mock inventory item from h.inventoryItems if available
+                    const item = h.inventoryItems.find((inv) => inv.id === _where.id);
+                    if (item) return item;
+                    // Return mock inventory item with sufficient stock as fallback
+                    return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
+                  },
+                },
     $transaction: async (fn: any) => fn(tx),
   };
   return { prisma };
@@ -294,12 +344,77 @@ describe('checkout', () => {
   });
 
   it('delivery menambah ongkir flat 10.000', async () => {
-    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
-    await svc.checkout('u1', undefined, { fulfillment_type: 'delivery' });
-    expect(h.orders[0].shipping_fee).toBe(10000);
-  });
+      await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+      await svc.checkout('u1', undefined, { fulfillment_type: 'delivery' });
+      expect(h.orders[0].shipping_fee).toBe(10000);
+    });
 
-  it('item tidak tersedia → 409 Conflict', async () => {
+    it('pre-check stok BOM: gagal 409 bila stok inventory tidak mencukupi', async () => {
+        // Setup product dengan BOM yang butuh inventory item
+        const testProduct = {
+          id: 'p-test-bom',
+          name: 'Test BOM Product',
+          base_price: '25000',
+          is_active: true,
+          is_available: true,
+          variants: [],
+          options: [],
+        };
+        h.products = [testProduct];
+    
+        // Add inventory item
+        h.inventoryItems = [{ id: 'inv-coffee', name: 'Biji Kopi', quantity: 50, unit: 'gram' }];
+    
+        // Add BOM: 30g biji kopi per item
+        h.productBOMs = [{
+          product_id: 'p-test-bom',
+          inventory_item_id: 'inv-coffee',
+          quantity: 30,
+          unit: 'gram',
+        }];
+    
+        await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom', option_ids: [], qty: 2 }]);
+    
+        // This should fail because we need 60g but only have 50g
+        await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ 
+          status: 409,
+          message: expect.stringContaining('Stok Biji Kopi tidak mencukupi')
+        });
+      });
+
+      it('pre-check stok BOM: berhasil bila stok inventory mencukupi', async () => {
+        // Setup product dengan BOM yang butuh inventory item
+        const testProduct = {
+          id: 'p-test-bom-2',
+          name: 'Test BOM Product 2',
+          base_price: '25000',
+          is_active: true,
+          is_available: true,
+          variants: [],
+          options: [],
+        };
+        h.products = [testProduct];
+    
+        // Add inventory item with sufficient stock
+        h.inventoryItems = [{ id: 'inv-milk', name: 'Susu', quantity: 1000, unit: 'ml' }];
+    
+        // Add BOM: 50ml susu per item
+        h.productBOMs = [{
+          product_id: 'p-test-bom-2',
+          inventory_item_id: 'inv-milk',
+          quantity: 50,
+          unit: 'ml',
+        }];
+    
+        await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom-2', option_ids: [], qty: 5 }]);
+    
+        // This should succeed because we have 1000ml and need only 5 * 50 = 250ml
+        const r = await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+        expect(r.status).toBe('PENDING');
+        expect(r.order_id).toBeTruthy();
+      });
+
+    it('item tidak tersedia → 409 Conflict', async () => {
     h.products = [{ ...LATTE, is_available: false }];
     await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
     await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ status: 409 });

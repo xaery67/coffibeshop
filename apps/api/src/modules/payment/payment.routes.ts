@@ -28,14 +28,17 @@ paymentRouter.post('/initiate', optionalAuth, asyncHandler(async (req, res) => {
 
   const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
 
+  // Normalisasi: empty string → undefined agar Midtrans tidak terkirim field kosong
+  const normalize = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
+
   const paymentService = await getPaymentService();
   const result = await paymentService.initiatePayment({
     orderId: order_id,
     amount,
     method,
-    customerEmail: customer_email,
-    customerPhone: customer_phone,
-    customerName: customer_name,
+    customerEmail: normalize(customer_email),
+    customerPhone: normalize(customer_phone),
+    customerName: normalize(customer_name),
     callbackUrl: callback_url,
     metadata,
   }, idempotencyKey);

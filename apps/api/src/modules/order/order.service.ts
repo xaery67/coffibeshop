@@ -111,144 +111,192 @@ export class OrderService {
   }
 
   async checkout(userId: string | undefined, guestId: string | undefined, input: any) {
-    const key = cartKeyFor(userId, guestId);
-    const items = await readCart(key);
-    if (!items.length) throw BadRequest('Cart kosong');
+      const key = cartKeyFor(userId, guestId);
+      const items = await readCart(key);
+      if (!items.length) throw BadRequest('Cart kosong');
 
-    // Normalisasi items untuk memastikan field konsisten
-    const normalizedItems = items.map(normalizeCartItemInput);
+      // Normalisasi items untuk memastikan field konsisten
+      const normalizedItems = items.map(normalizeCartItemInput);
     
-    // Baca meta cart (voucher, points)
-    const meta = await readCartMeta(key);
-    const discount = meta?.discount ?? 0;
-    const pointsDiscount = meta?.points_discount ?? 0;
-    const pointsToRedeem = meta?.points_to_redeem ?? 0;
-    const voucherCode = meta?.voucher_code;
+      // Baca meta cart (voucher, points)
+      const meta = await readCartMeta(key);
+      const discount = meta?.discount ?? 0;
+      const pointsDiscount = meta?.points_discount ?? 0;
+      const pointsToRedeem = meta?.points_to_redeem ?? 0;
+      const voucherCode = meta?.voucher_code;
 
-    const priced = await priceCart(normalizedItems, { 
-      shipping: input.fulfillment_type === 'delivery' ? env.SHIPPING_FLAT_FEE : 0,
-      discount,
-      pointsDiscount,
-    });
-    if (priced.items.some((i: any) => i.unavailable)) throw Conflict('Ada item yang tidak tersedia');
-
-    const order_number = `CS-${Date.now().toString(36).toUpperCase()}`;
-    const tracking_token = randomBytes(32).toString('base64url');
-
-    // bug #2: atomic transaction (order + items + status log)
-    const result = await prisma.$transaction(async (tx) => {
-      const order = await tx.order.create({
-        data: {
-          order_number,
-          user_id: userId ?? null,
-          status: 'PENDING',
-          total: priced.total,
-          subtotal: priced.subtotal,
-          tax: priced.tax,
-          shipping_fee: priced.shipping_fee,
-          discount: priced.discount,
-          points_discount: priced.points_discount,
-          voucher_code: voucherCode ?? null,
-          fulfillment_type: input.fulfillment_type ?? 'pickup',
-          payment_method: input.payment_method ?? 'qris',
-          tracking_token,
-          notes: input.notes ?? null,
-        },
+      const priced = await priceCart(normalizedItems, { 
+        shipping: input.fulfillment_type === 'delivery' ? env.SHIPPING_FLAT_FEE : 0,
+        discount,
+        pointsDiscount,
       });
+      if (priced.items.some((i: any) => i.unavailable)) throw Conflict('Ada item yang tidak tersedia');
 
-      // OrderStatusLog awal (bug #5) - gunakan to_status sesuai schema
-            await tx.orderStatusLog.create({
-              data: {
-                order_id: order.id,
-                to_status: 'PENDING',
-                note: 'Order dibuat',
-                changed_by: userId ?? null,
-              },
-            });
-
-            // Publish order created event to Redis for WebSocket fan-out
-                        await redisPubSub.publish('order:created', JSON.stringify({
-                                      type: 'created',
-                                      order_id: order.id,
-                                      order_number,
-                                      outlet_id: order.outlet_id ?? null,
-                                      status: 'PENDING',
-                                      created_at: new Date().toISOString(),
-                                    }));
-
-            // Batch fetch produk+opsi untuk snapshot opsi (N+1 fix bug #4)
-      const productIds = [...new Set(normalizedItems.map(i => i.product_id))];
-      const products = await tx.product.findMany({
-        where: { id: { in: productIds } },
-        include: { variants: true, options: { include: { values: true } } },
-      });
-      const productMap = new Map(products.map(p => [p.id, p]));
-
-      // OrderItems dengan unit_price, line_total, options (bug #3, #4)
+      // ─── Pre-check stok BOM (2b) ───
+      // Hitung total kebutuhan inventory per item untuk seluruh cart
+      const inventoryNeeds = new Map<string, { needed: number; unit: string; inventoryItemId: string; name: string }>();
+    
       for (const item of normalizedItems) {
-        const pricedItem = priced.items.find(p => 
-          p.product_id === item.product_id && 
-          p.variant_id === item.variant_id && 
-          JSON.stringify(p.option_ids?.sort() ?? []) === JSON.stringify(item.option_ids?.sort() ?? [])
-        );
+        const productId = item.product_id;
+        const qty = item.qty;
+      
+        const bomItems = await prisma.productBOM.findMany({
+          where: { product_id: productId },
+          include: { inventoryItem: true },
+        });
+      
+        for (const bom of bomItems) {
+          const needed = Number(bom.quantity) * qty;
+          const key = bom.inventory_item_id;
+          const existing = inventoryNeeds.get(key);
+          if (existing) {
+            existing.needed += needed;
+          } else {
+            inventoryNeeds.set(key, {
+              needed,
+              unit: bom.unit,
+              inventoryItemId: bom.inventory_item_id,
+              name: bom.inventoryItem.name,
+            });
+          }
+        }
+      }
+    
+      // Cek ketersediaan stok
+      for (const [inventoryItemId, need] of inventoryNeeds) {
+        const inventoryItem = await prisma.inventoryItem.findUnique({
+          where: { id: inventoryItemId },
+          select: { id: true, quantity: true, name: true, unit: true },
+        });
+      
+        if (!inventoryItem) {
+          throw Conflict(`Inventori ${need.name} tidak ditemukan`);
+        }
+      
+        const available = Number(inventoryItem.quantity);
+        if (available < need.needed) {
+          throw Conflict(`Stok ${need.name} tidak mencukupi (tersedia: ${available} ${need.unit}, butuh: ${need.needed} ${need.unit})`);
+        }
+      }
+      // ─── End pre-check ───
+
+      const order_number = `CS-${Date.now().toString(36).toUpperCase()}`;
+      const tracking_token = randomBytes(32).toString('base64url');
+
+      // bug #2: atomic transaction (order + items + status log)
+      const result = await prisma.$transaction(async (tx) => {
+        const order = await tx.order.create({
+          data: {
+            order_number,
+            user_id: userId ?? null,
+            status: 'PENDING',
+            total: priced.total,
+            subtotal: priced.subtotal,
+            tax: priced.tax,
+            shipping_fee: priced.shipping_fee,
+            discount: priced.discount,
+            points_discount: priced.points_discount,
+            voucher_code: voucherCode ?? null,
+            fulfillment_type: input.fulfillment_type ?? 'pickup',
+            payment_method: input.payment_method ?? 'qris',
+            tracking_token,
+            notes: input.notes ?? null,
+          },
+        });
+
+        // OrderStatusLog awal (bug #5) - gunakan to_status sesuai schema
+              await tx.orderStatusLog.create({
+                data: {
+                  order_id: order.id,
+                  to_status: 'PENDING',
+                  note: 'Order dibuat',
+                  changed_by: userId ?? null,
+                },
+              });
+
+              // Publish order created event to Redis for WebSocket fan-out
+                          await redisPubSub.publish('order:created', JSON.stringify({
+                                        type: 'created',
+                                        order_id: order.id,
+                                        order_number,
+                                        outlet_id: order.outlet_id ?? null,
+                                        status: 'PENDING',
+                                        created_at: new Date().toISOString(),
+                                      }));
+
+              // Batch fetch produk+opsi untuk snapshot opsi (N+1 fix bug #4)
+        const productIds = [...new Set(normalizedItems.map(i => i.product_id))];
+        const products = await tx.product.findMany({
+          where: { id: { in: productIds } },
+          include: { variants: true, options: { include: { values: true } } },
+        });
+        const productMap = new Map(products.map(p => [p.id, p]));
+
+        // OrderItems dengan unit_price, line_total, options (bug #3, #4)
+        for (const item of normalizedItems) {
+          const pricedItem = priced.items.find(p => 
+            p.product_id === item.product_id && 
+            p.variant_id === item.variant_id && 
+            JSON.stringify(p.option_ids?.sort() ?? []) === JSON.stringify(item.option_ids?.sort() ?? [])
+          );
         
-        // Snapshot opsi terpilih (bug #4)
-        const selectedOptions = [];
-        if (item.option_ids?.length) {
-          const product = productMap.get(item.product_id);
-          if (product) {
-            const allValues = product.options.flatMap(o => o.values);
-            for (const oid of item.option_ids) {
-              const v = allValues.find(x => x.id === oid);
-              if (v) {
-                selectedOptions.push({
-                  option_value_id: v.id,
-                  name: v.value,
-                  price_adjustment: Number(v.price_adjustment),
-                });
+          // Snapshot opsi terpilih (bug #4)
+          const selectedOptions = [];
+          if (item.option_ids?.length) {
+            const product = productMap.get(item.product_id);
+            if (product) {
+              const allValues = product.options.flatMap(o => o.values);
+              for (const oid of item.option_ids) {
+                const v = allValues.find(x => x.id === oid);
+                if (v) {
+                  selectedOptions.push({
+                    option_value_id: v.id,
+                    name: v.value,
+                    price_adjustment: Number(v.price_adjustment),
+                  });
+                }
               }
             }
           }
+
+          await tx.orderItem.create({
+            data: {
+              order_id: order.id,
+              product_id: item.product_id,
+              variant_id: item.variant_id ?? null,
+              qty: item.qty,
+              unit_price: pricedItem?.unit_price ?? 0,
+              line_total: pricedItem?.line_total ?? 0,
+              options: selectedOptions,
+            },
+          });
         }
 
-        await tx.orderItem.create({
-          data: {
-            order_id: order.id,
-            product_id: item.product_id,
-            variant_id: item.variant_id ?? null,
-            qty: item.qty,
-            unit_price: pricedItem?.unit_price ?? 0,
-            line_total: pricedItem?.line_total ?? 0,
-            options: selectedOptions,
-          },
-        });
-      }
+        // Loyalty points redeemed (bug #7) - buat record redeemed di dalam TX
+        if (userId && pointsToRedeem > 0) {
+          await tx.loyaltyPoint.create({
+            data: {
+              user_id: userId,
+              points: pointsToRedeem,
+              type: 'redeemed',
+              order_id: order.id,
+            },
+          });
+        }
 
-      // Loyalty points redeemed (bug #7) - buat record redeemed di dalam TX
-      if (userId && pointsToRedeem > 0) {
-        await tx.loyaltyPoint.create({
-          data: {
-            user_id: userId,
-            points: pointsToRedeem,
-            type: 'redeemed',
-            order_id: order.id,
-          },
-        });
-      }
+        return { order, tracking_token };
+      });
 
-      return { order, tracking_token };
-    });
-
-    await redisCache.del(key);
-    await clearCartMeta(key);
-    return {
-      order_id: result.order.id,
-      order_number,
-      status: 'PENDING',
-      tracking_token: result.tracking_token,
-      payment_initiate_url: `/api/v1/payments/initiate?order_id=${result.order.id}`,
-    };
-  }
+      await redisCache.del(key);
+      await clearCartMeta(key);
+      return {
+        order_id: result.order.id,
+        order_number,
+        status: 'PENDING',
+        tracking_token: result.tracking_token,
+        payment_initiate_url: `/api/v1/payments/initiate?order_id=${result.order.id}`,
+      };
+    }
 
   async history(userId: string, query: any) {
     const page = Number(query.page) || 1;

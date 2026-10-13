@@ -40,13 +40,16 @@ export function PaymentPage() {
 
   const [method, setMethod] = useState<PaymentMethod | undefined>(info.method);
   const [initiating, setInitiating] = useState(false);
-  const [initiateError, setInitiateError] = useState<string | null>(null);
-  const [result, setResult] = useState<InitiatePaymentResult | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const attempt = useRef(0);
+    const [initiateError, setInitiateError] = useState<string | null>(null);
+    const [result, setResult] = useState<InitiatePaymentResult | null>(null);
+    const [copied, setCopied] = useState(false);
+    const [toast, setToast] = useState<string | null>(null);
+    const attempt = useRef(0);
 
-  const tracking = useOrderTracking(info.trackingToken);
+    // Normalisasi: empty string → undefined agar backend tidak kirim field kosong ke Midtrans
+    const normalize = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
+
+    const tracking = useOrderTracking(info.trackingToken);
   const uiStatus: PaymentUiStatus = paymentUiStatus(tracking.status);
 
   const initiate = useCallback(
@@ -55,15 +58,15 @@ export function PaymentPage() {
       setInitiating(true);
       setInitiateError(null);
       try {
-        const res = await postInitiatePayment(
-          {
-            order_id: orderId,
-            amount: info.amount,
-            method: m,
-            customer_name: info.contact?.full_name,
-            customer_email: info.contact?.email,
-            customer_phone: info.contact?.phone,
-          },
+              const res = await postInitiatePayment(
+                {
+                  order_id: orderId,
+                  amount: info.amount,
+                  method: m,
+                  customer_name: info.contact?.full_name,
+                  customer_email: normalize(info.contact?.email),
+                  customer_phone: normalize(info.contact?.phone),
+                },
           // Idempotency: stabil per order+metode+percobaan → retry tidak buat transaksi ganda.
           `${orderId}:${m}:${attempt.current}`,
         );
