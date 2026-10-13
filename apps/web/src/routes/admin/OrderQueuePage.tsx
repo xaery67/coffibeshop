@@ -44,7 +44,7 @@ export function OrderQueuePage() {
   const handlePrint = async (orderId: string) => {
     try {
       await printTicket(orderId);
-      setToast({ variant: 'success', message: 'Tiket dikirim ke printer' });
+      setToast({ variant: 'success', message: 'Tiket PDF diunduh' });
     } catch (e) {
       setToast({ variant: 'error', message: (e as Error).message || 'Gagal mencetak tiket' });
     }

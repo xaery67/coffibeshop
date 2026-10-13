@@ -107,6 +107,9 @@ services:
       - api
     ports:
       - "5173:80"
+    # Catatan (issue #68): panel admin SELALU memakai API nyata — modul mock
+    # (`VITE_ADMIN_MOCK`) sudah dihapus dari kode, jadi tidak ada env yang perlu
+    # diset di sini. Frontend memanggil `/api/v1/*` (nginx mem-proxy ke `api`).
 
 volumes:
   pg_data:
