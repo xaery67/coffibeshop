@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   vouchers: [] as any[],
   inventoryItems: [] as any[],
   productBOMs: [] as any[],
+  outlets: [] as any[],
   store: new Map<string, string>(),
   events: [] as any[],
   queueAdds: [] as any[],
@@ -44,7 +45,6 @@ vi.mock('../../config/redis.js', () => ({
       return 1;
     },
     subscribe: async (_channel: string, _callback: (msg: string) => void) => {
-      // Mock subscription - just store callback if needed
       return 1;
     },
     unsubscribe: async (_channel: string) => {
@@ -52,7 +52,7 @@ vi.mock('../../config/redis.js', () => ({
     },
   },
   pingRedis: async () => true,
-}))
+}));
 
 vi.mock('./sse.controller.js', () => ({
   publishOrderEvent: (key: string, payload: any) => void h.events.push({ key, payload }),
@@ -69,9 +69,6 @@ vi.mock('../../config/prisma.js', () => {
         return o;
       },
       update: async ({ where, data }: any) => {
-        // Mimik Prisma: kembalikan objek BARU (jangan mutasi objek yang dipegang
-        // findUnique) — kalau tidak, `order.status` ikut berubah jadi CANCELLED
-        // dan guard `if (order.status === 'PAID')` di cancel() salah.
         const idx = h.orders.findIndex((x) => x.id === where.id);
         const updated = { ...h.orders[idx], ...data };
         h.orders[idx] = updated;
@@ -97,77 +94,86 @@ vi.mock('../../config/prisma.js', () => {
       },
     },
     product: {
-          findMany: async ({ where: _where }: any = {}) => {
-            const ids: string[] = _where?.id?.in ?? [];
-            return h.products.filter((p) => ids.includes(p.id));
-          },
-        },
-        productBOM: {
-                          findMany: async ({ where: _where }: any = {}) => {
-                            // Return BOMs from h.productBOMs for the given product_id
-                            // Include inventoryItem relation by looking up from h.inventoryItems
-                            return h.productBOMs
-                              .filter((bom) => bom.product_id === _where?.product_id)
-                              .map((bom) => {
-                                const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
-                                return {
-                                  ...bom,
-                                  inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
-                                };
-                              });
-                          },
-                        },
-        inventoryItem: {
-                  findUnique: async ({ where: _where }: any = {}) => {
-                    // Return mock inventory item from h.inventoryItems if available
-                    const item = h.inventoryItems.find((inv) => inv.id === _where.id);
-                    if (item) return item;
-                    // Return mock inventory item with sufficient stock as fallback
-                    return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
-                  },
-                },
+      findMany: async ({ where: _where }: any = {}) => {
+        const ids: string[] = _where?.id?.in ?? [];
+        return h.products.filter((p) => ids.includes(p.id));
+      },
+    },
+    productBOM: {
+      findMany: async ({ where: _where }: any = {}) => {
+        return h.productBOMs
+          .filter((bom) => bom.product_id === _where?.product_id)
+          .map((bom) => {
+            const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
+            return {
+              ...bom,
+              inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
+            };
+          });
+      },
+    },
+    inventoryItem: {
+      findUnique: async ({ where: _where }: any = {}) => {
+        const item = h.inventoryItems.find((inv) => inv.id === _where.id);
+        if (item) return item;
+        return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
+      },
+    },
+    outlet: {
+      findUnique: async ({ where: _where }: any = {}) => {
+        return h.outlets.find((o) => o.id === _where.id) ?? null;
+      },
+    },
   };
 
   const prisma = {
-      product: {
-        findMany: async ({ where }: any = {}) => {
-          const ids: string[] = where?.id?.in ?? [];
-          return h.products.filter((p) => ids.includes(p.id));
-        },
-        findUnique: async ({ where }: any = {}) => {
-          if (!where?.id) return null;
-          return h.products.find((p) => p.id === where.id) ?? null;
-        },
+    product: {
+      findMany: async ({ where }: any = {}) => {
+        const ids: string[] = where?.id?.in ?? [];
+        return h.products.filter((p) => ids.includes(p.id));
       },
+      findUnique: async ({ where }: any = {}) => {
+        if (!where?.id) return null;
+        return h.products.find((p) => p.id === where.id) ?? null;
+      },
+    },
     order: {
-          create: tx.order.create,
-          update: tx.order.update,
-          findUnique: async ({ where, include }: any) => {
-                                  if (where.id) {
-                                    const order = h.orders.find((o) => o.id === where.id) ?? null;
-                                    if (order && include?.items) {
-                                      // Populate items with product details
-                                      const items = h.items.filter((i) => i.order_id === order.id);
-                                      // Enrich items with product data
-                                      const enrichedItems = items.map(item => {
-                                        const product = h.products.find(p => p.id === item.product_id);
-                                        return {
-                                          ...item,
-                                          product: product ? {
-                                            ...product,
-                                            variants: product.variants ?? [],
-                                            options: product.options ?? [],
-                                          } : null,
-                                          variant: item.variant_id ? h.products.flatMap(p => p.variants ?? []).find(v => v.id === item.variant_id) ?? null : null,
-                                        };
-                                      });
-                                      return { ...order, items: enrichedItems };
-                                    }
-                                    return order;
-                                  }
-                                  if (where.tracking_token) return h.orders.find((o) => o.tracking_token === where.tracking_token) ?? null;
-                                  return null;
-                                },
+      create: tx.order.create,
+      update: tx.order.update,
+      findUnique: async ({ where, include }: any) => {
+        if (where.id) {
+          const order = h.orders.find((o) => o.id === where.id) ?? null;
+          if (order && include?.items) {
+            const items = h.items.filter((i) => i.order_id === order.id);
+            const enrichedItems = items.map(item => {
+              const product = h.products.find(p => p.id === item.product_id);
+              return {
+                ...item,
+                product: product ? {
+                  ...product,
+                  variants: product.variants ?? [],
+                  options: product.options ?? [],
+                } : null,
+                variant: item.variant_id ? h.products.flatMap(p => p.variants ?? []).find(v => v.id === item.variant_id) ?? null : null,
+              };
+            });
+            let outlet = null;
+            if (include?.outlet && order.outlet_id) {
+              outlet = h.outlets.find((o: any) => o.id === order.outlet_id) ?? null;
+            }
+            return { ...order, items: enrichedItems, outlet };
+          }
+          if (include?.outlet && order?.outlet_id) {
+            return { 
+              ...order, 
+              outlet: h.outlets.find((o: any) => o.id === order.outlet_id) ?? null 
+            };
+          }
+          return order;
+        }
+        if (where.tracking_token) return h.orders.find((o) => o.tracking_token === where.tracking_token) ?? null;
+        return null;
+      },
       findMany: async ({ where }: any = {}) => {
         let rows = [...h.orders];
         if (where?.user_id) rows = rows.filter((o) => o.user_id === where.user_id);
@@ -187,29 +193,30 @@ vi.mock('../../config/prisma.js', () => {
       },
     },
     productBOM: {
-                      findMany: async ({ where: _where }: any = {}) => {
-                        // Return BOMs from h.productBOMs for the given product_id
-                        // Include inventoryItem relation by looking up from h.inventoryItems
-                        return h.productBOMs
-                          .filter((bom) => bom.product_id === _where?.product_id)
-                          .map((bom) => {
-                            const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
-                            return {
-                              ...bom,
-                              inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
-                            };
-                          });
-                      },
-                    },
-        inventoryItem: {
-                  findUnique: async ({ where: _where }: any = {}) => {
-                    // Return mock inventory item from h.inventoryItems if available
-                    const item = h.inventoryItems.find((inv) => inv.id === _where.id);
-                    if (item) return item;
-                    // Return mock inventory item with sufficient stock as fallback
-                    return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
-                  },
-                },
+      findMany: async ({ where: _where }: any = {}) => {
+        return h.productBOMs
+          .filter((bom) => bom.product_id === _where?.product_id)
+          .map((bom) => {
+            const inventoryItem = h.inventoryItems.find((inv) => inv.id === bom.inventory_item_id);
+            return {
+              ...bom,
+              inventoryItem: inventoryItem ?? { id: bom.inventory_item_id, name: 'Unknown', quantity: 1000, unit: 'pcs' },
+            };
+          });
+      },
+    },
+    inventoryItem: {
+      findUnique: async ({ where: _where }: any = {}) => {
+        const item = h.inventoryItems.find((inv) => inv.id === _where.id);
+        if (item) return item;
+        return { id: _where.id, quantity: 1000, name: 'Test Inventory', unit: 'pcs' };
+      },
+    },
+    outlet: {
+      findUnique: async ({ where: _where }: any = {}) => {
+        return h.outlets.find((o) => o.id === _where.id) ?? null;
+      },
+    },
     $transaction: async (fn: any) => fn(tx),
   };
   return { prisma };
@@ -250,7 +257,6 @@ function seedOrder(over: Partial<any> = {}) {
   };
   h.orders.push(o);
   
-  // Also seed items into h.items for reorder test
   if (over.items?.length) {
     for (const item of over.items) {
       h.items.push({
@@ -277,6 +283,9 @@ beforeEach(() => {
   h.loyalty = [];
   h.products = [LATTE];
   h.vouchers = [];
+  h.inventoryItems = [];
+  h.productBOMs = [];
+  h.outlets = [];
   h.store.clear();
   h.events = [];
   h.queueAdds = [];
@@ -344,77 +353,69 @@ describe('checkout', () => {
   });
 
   it('delivery menambah ongkir flat 10.000', async () => {
-      await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
-      await svc.checkout('u1', undefined, { fulfillment_type: 'delivery' });
-      expect(h.orders[0].shipping_fee).toBe(10000);
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    await svc.checkout('u1', undefined, { fulfillment_type: 'delivery' });
+    expect(h.orders[0].shipping_fee).toBe(10000);
+  });
+
+  it('pre-check stok BOM: gagal 409 bila stok inventory tidak mencukupi', async () => {
+    const testProduct = {
+      id: 'p-test-bom',
+      name: 'Test BOM Product',
+      base_price: '25000',
+      is_active: true,
+      is_available: true,
+      variants: [],
+      options: [],
+    };
+    h.products = [testProduct];
+    
+    h.inventoryItems = [{ id: 'inv-coffee', name: 'Biji Kopi', quantity: 50, unit: 'gram' }];
+    
+    h.productBOMs = [{
+      product_id: 'p-test-bom',
+      inventory_item_id: 'inv-coffee',
+      quantity: 30,
+      unit: 'gram',
+    }];
+    
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom', option_ids: [], qty: 2 }]);
+    
+    await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ 
+      status: 409,
+      message: expect.stringContaining('Stok Biji Kopi tidak mencukupi')
     });
+  });
 
-    it('pre-check stok BOM: gagal 409 bila stok inventory tidak mencukupi', async () => {
-        // Setup product dengan BOM yang butuh inventory item
-        const testProduct = {
-          id: 'p-test-bom',
-          name: 'Test BOM Product',
-          base_price: '25000',
-          is_active: true,
-          is_available: true,
-          variants: [],
-          options: [],
-        };
-        h.products = [testProduct];
+  it('pre-check stok BOM: berhasil bila stok inventory mencukupi', async () => {
+    const testProduct = {
+      id: 'p-test-bom-2',
+      name: 'Test BOM Product 2',
+      base_price: '25000',
+      is_active: true,
+      is_available: true,
+      variants: [],
+      options: [],
+    };
+    h.products = [testProduct];
     
-        // Add inventory item
-        h.inventoryItems = [{ id: 'inv-coffee', name: 'Biji Kopi', quantity: 50, unit: 'gram' }];
+    h.inventoryItems = [{ id: 'inv-milk', name: 'Susu', quantity: 1000, unit: 'ml' }];
     
-        // Add BOM: 30g biji kopi per item
-        h.productBOMs = [{
-          product_id: 'p-test-bom',
-          inventory_item_id: 'inv-coffee',
-          quantity: 30,
-          unit: 'gram',
-        }];
+    h.productBOMs = [{
+      product_id: 'p-test-bom-2',
+      inventory_item_id: 'inv-milk',
+      quantity: 50,
+      unit: 'ml',
+    }];
     
-        await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom', option_ids: [], qty: 2 }]);
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom-2', option_ids: [], qty: 5 }]);
     
-        // This should fail because we need 60g but only have 50g
-        await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ 
-          status: 409,
-          message: expect.stringContaining('Stok Biji Kopi tidak mencukupi')
-        });
-      });
+    const r = await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+    expect(r.status).toBe('PENDING');
+    expect(r.order_id).toBeTruthy();
+  });
 
-      it('pre-check stok BOM: berhasil bila stok inventory mencukupi', async () => {
-        // Setup product dengan BOM yang butuh inventory item
-        const testProduct = {
-          id: 'p-test-bom-2',
-          name: 'Test BOM Product 2',
-          base_price: '25000',
-          is_active: true,
-          is_available: true,
-          variants: [],
-          options: [],
-        };
-        h.products = [testProduct];
-    
-        // Add inventory item with sufficient stock
-        h.inventoryItems = [{ id: 'inv-milk', name: 'Susu', quantity: 1000, unit: 'ml' }];
-    
-        // Add BOM: 50ml susu per item
-        h.productBOMs = [{
-          product_id: 'p-test-bom-2',
-          inventory_item_id: 'inv-milk',
-          quantity: 50,
-          unit: 'ml',
-        }];
-    
-        await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-test-bom-2', option_ids: [], qty: 5 }]);
-    
-        // This should succeed because we have 1000ml and need only 5 * 50 = 250ml
-        const r = await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
-        expect(r.status).toBe('PENDING');
-        expect(r.order_id).toBeTruthy();
-      });
-
-    it('item tidak tersedia → 409 Conflict', async () => {
+  it('item tidak tersedia → 409 Conflict', async () => {
     h.products = [{ ...LATTE, is_available: false }];
     await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
     await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ status: 409 });
@@ -486,12 +487,11 @@ describe('updateStatus — state machine kanonik', () => {
   });
 
   it('publish event SSE status_change setiap perubahan', async () => {
-      const o = seedOrder({ status: 'PENDING' });
-      await svc.updateStatus(o.id, { status: 'PAID' });
-      // Now publishes both to redisPubSub and SSE - expect 2 events
-      expect(h.events.length).toBeGreaterThanOrEqual(1);
-      expect(h.events.some(e => e.payload?.status === 'PAID')).toBe(true);
-    });
+    const o = seedOrder({ status: 'PENDING' });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    expect(h.events.length).toBeGreaterThanOrEqual(1);
+    expect(h.events.some(e => e.payload?.status === 'PAID')).toBe(true);
+  });
 });
 
 // ═══════════════ customer cancel (ADR-012) ═══════════════
@@ -524,32 +524,29 @@ describe('cancel — customer (PENDING/PAID saja)', () => {
   });
 
   it('order tidak ditemukan → 404', async () => {
-      await expect(svc.cancel('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
-    });
+    await expect(svc.cancel('u1', 'tidak-ada')).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ═══════════════ cancel refund queue (payment.refund) ═══════════════
+
+describe('cancel — enqueue payment.refund job when PAID', () => {
+  it('menambahkan job payment.refund ke queue bila order PAID', async () => {
+    const o = seedOrder({ status: 'PAID', user_id: 'u1', total: 50000 });
+    await svc.cancel('u1', o.id, 'Refund dong');
+
+    const refundJobs = h.queueAdds.filter((j) => j.queue === 'payment' && j.name === 'refund');
+    expect(refundJobs.length).toBe(1);
+    expect(refundJobs[0].payload).toMatchObject({ orderId: o.id, amount: 50000 });
+    expect(h.queueAdds.filter((j) => j.queue === 'notification')).toHaveLength(0);
   });
 
-  // ═══════════════ cancel refund queue (payment.refund) ═══════════════
-
-  describe('cancel — enqueue payment.refund job when PAID', () => {
-    it('menambahkan job payment.refund ke queue bila order PAID', async () => {
-      const o = seedOrder({ status: 'PAID', user_id: 'u1', total: 50000 });
-      await svc.cancel('u1', o.id, 'Refund dong');
-
-      // Job HARUS masuk ke queue `payment` dengan nama `refund` (bukan notification).
-      const refundJobs = h.queueAdds.filter((j) => j.queue === 'payment' && j.name === 'refund');
-      expect(refundJobs.length).toBe(1);
-      expect(refundJobs[0].payload).toMatchObject({ orderId: o.id, amount: 50000 });
-      // Tidak boleh ada job refund yang nyasar ke queue notification.
-      expect(h.queueAdds.filter((j) => j.queue === 'notification')).toHaveLength(0);
-    });
-
-    it('TIDAK menambahkan refund job bila order PENDING', async () => {
-      const o = seedOrder({ status: 'PENDING', user_id: 'u1', total: 50000 });
-      await svc.cancel('u1', o.id);
-      // Tidak ada refund job untuk PENDING (belum dibayar).
-      expect(h.queueAdds.filter((j) => j.name === 'refund')).toHaveLength(0);
-    });
+  it('TIDAK menambahkan refund job bila order PENDING', async () => {
+    const o = seedOrder({ status: 'PENDING', user_id: 'u1', total: 50000 });
+    await svc.cancel('u1', o.id);
+    expect(h.queueAdds.filter((j) => j.name === 'refund')).toHaveLength(0);
   });
+});
 
 // ═══════════════ reorder (ADR-010) ═══════════════
 
@@ -628,5 +625,50 @@ describe('detail — anti-IDOR', () => {
     const o = seedOrder({ user_id: 'u1' });
     const r = await svc.detail('u1', o.id);
     expect(r.id).toBe(o.id);
+  });
+});
+
+// ═══════════════ printTicket — kitchen ticket PDF ═══════════════
+
+describe('printTicket — kitchen ticket PDF', () => {
+  it('return PDF buffer untuk order valid (staff role)', async () => {
+    const o = seedOrder({ 
+      status: 'PAID', 
+      user_id: 'u1',
+      outlet_id: 'outlet-1',
+      items: [{ product_id: 'p-latte', qty: 2, unit_price: 37000, line_total: 74000, options: null }]
+    });
+    
+    h.outlets = [{ id: 'outlet-1', name: 'Outlet Pusat' }];
+    
+    const pdfBuffer = await svc.printTicket(o.id, 'kasir', 'outlet-1');
+    
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.length).toBeGreaterThan(0);
+    expect(pdfBuffer.toString('ascii', 0, 4)).toBe('%PDF');
+  });
+
+  it('404 bila order tidak ditemukan', async () => {
+    await expect(svc.printTicket('tidak-ada', 'kasir')).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('403 bila role tidak diizinkan (guest)', async () => {
+    const o = seedOrder({ status: 'PAID' });
+    await expect(svc.printTicket(o.id, 'guest')).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('403 bila staff mencoba akses order outlet lain', async () => {
+    const o = seedOrder({ status: 'PAID', outlet_id: 'outlet-2' });
+    await expect(svc.printTicket(o.id, 'kasir', 'outlet-1')).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('owner bisa akses order outlet mana saja', async () => {
+    const o = seedOrder({ status: 'PAID', outlet_id: 'outlet-2' });
+    
+    h.outlets = [{ id: 'outlet-1', name: 'Outlet 1' }, { id: 'outlet-2', name: 'Outlet 2' }];
+    
+    const pdfBuffer = await svc.printTicket(o.id, 'owner', 'outlet-1');
+    expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
+    expect(pdfBuffer.toString('ascii', 0, 4)).toBe('%PDF');
   });
 });
