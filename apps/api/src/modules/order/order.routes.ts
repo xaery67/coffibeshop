@@ -136,3 +136,18 @@ orderRouter.put(
   requireRole('owner', 'manager', 'kasir', 'barista'),
   asyncHandler(async (req, res) => sendOk(res, await service.updateStatus(req.params.id, req.body))),
 );
+
+/** POST /api/v1/orders/:id/print-ticket — cetak tiket kitchen (PDF). */
+orderRouter.post(
+  '/:id/print-ticket',
+  requireAuth,
+  requireRole('owner', 'manager', 'kasir', 'barista'),
+  asyncHandler(async (req, res) => {
+    const userRole = (req as any).user?.role;
+    const outletId = (req as any).user?.outlet_id;
+    const pdfBuffer = await service.printTicket(req.params.id, userRole, outletId);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="kitchen-ticket-${req.params.id}.pdf"`);
+    res.send(pdfBuffer);
+  }),
+);

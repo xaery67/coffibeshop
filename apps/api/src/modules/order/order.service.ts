@@ -5,6 +5,7 @@ import { env } from '../../config/env.js';
 import { BadRequest, NotFound, Forbidden, Conflict } from '../../lib/http.js';
 import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart, normalizeCartItemInput, readCartMeta, writeCartMeta, clearCartMeta } from './cart.service.js';
 import { publishOrderEvent } from './sse.controller.js';
+import PDFDocument from 'pdfkit';
 
 export class OrderService {
   async getCart(userId?: string, guestId?: string) {
@@ -558,6 +559,120 @@ export class OrderService {
     );
 
     publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
-    return updated;
-  }
-}
+        return updated;
+      }
+
+      /**
+       * Generate kitchen ticket PDF for order.
+       * Returns PDF buffer with Content-Type: application/pdf
+       */
+      async printTicket(orderId: string, userRole: string, outletId?: string): Promise<Buffer> {
+        // Fetch order with items, product names, outlet
+        const order = await prisma.order.findUnique({
+          where: { id: orderId },
+          include: {
+            items: {
+              include: {
+                product: { select: { id: true, name: true } },
+              },
+            },
+            outlet: { select: { id: true, name: true } },
+          },
+        });
+
+        if (!order) throw NotFound('Order tidak ditemukan');
+
+        // RBAC: staff/owner/manager only (checked in route, but double-check)
+        const allowedRoles = ['owner', 'manager', 'kasir', 'barista'];
+        if (!allowedRoles.includes(userRole)) throw Forbidden();
+
+        // Outlet scoping for staff
+        if (outletId && order.outlet_id !== outletId && userRole !== 'owner') {
+          throw Forbidden('Tidak bisa akses order outlet lain');
+        }
+
+        // Generate PDF using pdfkit
+        return new Promise((resolve, reject) => {
+          const doc = new PDFDocument({ margin: 40, size: 'A5' });
+          const chunks: Buffer[] = [];
+
+          doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+          doc.on('end', () => resolve(Buffer.concat(chunks)));
+          doc.on('error', reject);
+
+          // Header
+          doc.fontSize(18).font('Helvetica-Bold').text('KITCHEN TICKET', { align: 'center' });
+          doc.moveDown(0.5);
+
+          // Order info
+          doc.fontSize(10).font('Helvetica');
+          doc.text(`No. Order: ${order.order_number}`, { align: 'left' });
+          doc.text(`Outlet: ${order.outlet?.name ?? 'N/A'}`, { align: 'left' });
+          doc.text(`Waktu: ${new Date(order.created_at).toLocaleString('id-ID')}`, { align: 'left' });
+          doc.text(`Status: ${order.status}`, { align: 'left' });
+          doc.text(`Tipe: ${order.fulfillment_type}`, { align: 'left' });
+          if (order.notes) doc.text(`Catatan: ${order.notes}`, { align: 'left' });
+          doc.moveDown(0.5);
+
+          // Separator
+          doc.moveTo(40, doc.y).lineTo(370, doc.y).stroke();
+          doc.moveDown(0.5);
+
+          // Items header
+          doc.fontSize(12).font('Helvetica-Bold').text('ITEM', { align: 'left' });
+          doc.moveDown(0.3);
+
+          // Items
+          doc.fontSize(10).font('Helvetica');
+          for (const item of order.items) {
+                      const productName = item.product?.name ?? 'Produk';
+                      const qty = item.qty;
+                      const lineTotal = Number(item.line_total);
+
+            doc.text(`${qty}x ${productName}`, { align: 'left', indent: 20 });
+        
+            // Options
+            if (item.options) {
+              const options = item.options as any[];
+              for (const opt of options) {
+                doc.text(`  - ${opt.name} (+Rp ${Number(opt.price_adjustment).toLocaleString('id-ID')})`, { 
+                  align: 'left', 
+                  indent: 40 
+                });
+              }
+            }
+        
+            // Notes
+            if (item.notes) {
+              doc.text(`  Catatan: ${item.notes}`, { align: 'left', indent: 40 });
+            }
+
+            doc.text(`  Subtotal: Rp ${lineTotal.toLocaleString('id-ID')}`, { align: 'right', indent: 20 });
+            doc.moveDown(0.3);
+          }
+
+          // Separator
+          doc.moveTo(40, doc.y).lineTo(370, doc.y).stroke();
+          doc.moveDown(0.5);
+
+          // Totals
+          doc.fontSize(10).font('Helvetica');
+          doc.text(`Subtotal: Rp ${Number(order.subtotal).toLocaleString('id-ID')}`, { align: 'right' });
+          if (Number(order.discount) > 0) {
+            doc.text(`Diskon: -Rp ${Number(order.discount).toLocaleString('id-ID')}`, { align: 'right' });
+          }
+          if (Number(order.points_discount) > 0) {
+            doc.text(`Poin: -Rp ${Number(order.points_discount).toLocaleString('id-ID')}`, { align: 'right' });
+          }
+          doc.text(`Pajak: Rp ${Number(order.tax).toLocaleString('id-ID')}`, { align: 'right' });
+          if (Number(order.shipping_fee) > 0) {
+            doc.text(`Ongkir: Rp ${Number(order.shipping_fee).toLocaleString('id-ID')}`, { align: 'right' });
+          }
+          doc.moveDown(0.3);
+          doc.fontSize(12).font('Helvetica-Bold');
+          doc.text(`TOTAL: Rp ${Number(order.total).toLocaleString('id-ID')}`, { align: 'right' });
+
+          doc.end();
+        });
+      }
+    }

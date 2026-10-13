@@ -82,6 +82,7 @@ model Outlet {
 
   products   Product[]
   categories Category[]
+  orders     Order[]
 
   @@index([is_active])
   @@map("outlets")
@@ -230,6 +231,7 @@ model Order {
   updated_at          DateTime        @updatedAt
 
   user      User?        @relation(fields: [user_id], references: [id])
+  outlet    Outlet?      @relation(fields: [outlet_id], references: [id])
   items     OrderItem[]
   logs      OrderStatusLog[]
   payments  Payment[]
