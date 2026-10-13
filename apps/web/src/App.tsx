@@ -1,6 +1,6 @@
 import { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { Header, CartFAB, Footer } from './components/layout/Shell.js';
+import { Header, BottomNav, CartFAB, Footer } from './components/layout/Shell.js';
 import { ProductCardSkeleton } from './components/domain/ProductCard.js';
 
 /**
@@ -55,7 +55,8 @@ function CustomerShell() {
       </a>
       <Header />
 
-      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
+      {/* pb-24: beri ruang BottomNav (h-14 + safe-area) agar konten tak tertutup (PRD §7.2). */}
+      <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 pb-24">
         <Suspense fallback={<RouteFallback />}>
           <Routes>
             <Route path="/" element={<HomePage />} />
@@ -74,6 +75,7 @@ function CustomerShell() {
 
       <CartFAB />
       <Footer />
+      <BottomNav />
     </div>
   );
 }

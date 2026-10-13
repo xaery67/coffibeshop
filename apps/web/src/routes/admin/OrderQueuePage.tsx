@@ -96,7 +96,7 @@ export function OrderQueuePage() {
                       <button
                         type="button"
                         onClick={() => handlePrint(o.id)}
-                        className="min-h-[36px] w-full rounded-lg border border-border text-caption text-text-muted hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+                        className="min-h-[44px] w-full rounded-lg border border-border text-caption text-text-muted hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
                       >
                         🖨 Cetak tiket
                       </button>

@@ -35,6 +35,12 @@ export interface DataTableProps<T> {
   toolbar?: ReactNode;
   emptyMessage?: string;
   caption?: string;
+  /**
+   * Kartu khusus mobile (di bawah `sm`). Bila tidak diisi, kartu dibangun otomatis
+   * dari `columns` (label = `header`, nilai = `render`) — cukup untuk sebagian besar
+   * kasus (PRD-FRONTEND §7.2: "tabel → kartu di layar kecil").
+   */
+  renderMobileCard?: (row: T) => ReactNode;
   'data-testid'?: string;
 }
 
@@ -51,6 +57,7 @@ export function DataTable<T>({
   toolbar,
   emptyMessage = 'Tidak ada data.',
   caption,
+  renderMobileCard,
   'data-testid': testId,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
@@ -95,6 +102,20 @@ export function DataTable<T>({
     }
   };
 
+  /** Kolom yang bisa diurutkan — sumber kontrol sort versi kartu mobile. */
+  const sortableColumns = columns.filter((c) => c.sortValue);
+
+  /** Pilih kolom sort dari kartu mobile (default arah menaik). */
+  const handleMobileSort = (key: string) => {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
   const alignCls = (a?: Column<T>['align']) =>
     a === 'right' ? 'text-right' : a === 'center' ? 'text-center' : 'text-left';
 
@@ -122,7 +143,68 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-card border border-brand-100 bg-white">
+      {/* Mobile (< sm): kartu per baris (PRD §7.2). Tabel disembunyikan. */}
+      <div className="space-y-2 sm:hidden">
+        {sortableColumns.length > 0 && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="font-semibold text-text">Urutkan</span>
+            <select
+              value={sortKey ?? ''}
+              onChange={(e) => handleMobileSort(e.target.value)}
+              aria-label="Urutkan berdasarkan kolom"
+              className="min-h-[44px] flex-1 rounded-lg border border-border bg-white px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+            >
+              <option value="">Pilih kolom…</option>
+              {sortableColumns.map((c) => (
+                <option key={c.key} value={c.key}>
+                  {c.header}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => sortKey && setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+              disabled={!sortKey}
+              aria-label={sortDir === 'asc' ? 'Urutan menaik, ubah ke menurun' : 'Urutan menurun, ubah ke menaik'}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-border disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+            >
+              <span aria-hidden="true">{sortDir === 'asc' ? '▲' : '▼'}</span>
+            </button>
+          </label>
+        )}
+
+        {paged.length === 0 ? (
+          <p className="rounded-card border border-dashed border-border bg-white px-4 py-6 text-center text-sm text-text-muted">
+            {emptyMessage}
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {paged.map((row) => (
+              <li
+                key={rowKey(row)}
+                className="rounded-card border border-brand-100 bg-white p-3 shadow-elev1"
+              >
+                {renderMobileCard ? (
+                  renderMobileCard(row)
+                ) : (
+                  <dl className="space-y-1.5">
+                    {columns.map((col) => (
+                      <div key={col.key} className="flex items-start justify-between gap-3">
+                        <dt className="text-caption text-text-muted">{col.header}</dt>
+                        <dd className={['text-sm text-text', alignCls(col.align)].join(' ')}>
+                          {col.render(row)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-card border border-brand-100 bg-white sm:block">
         <table className="w-full border-collapse text-sm">
           {caption && <caption className="px-3 py-2 text-left text-caption text-text-muted">{caption}</caption>}
           <thead>
@@ -141,7 +223,7 @@ export function DataTable<T>({
                       <button
                         type="button"
                         onClick={() => toggleSort(col)}
-                        className="inline-flex min-h-[36px] items-center gap-1 hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+                        className="inline-flex min-h-[44px] items-center gap-1 hover:text-brand focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
                       >
                         {col.header}
                         <span aria-hidden="true" className="text-caption text-text-muted">
@@ -188,7 +270,7 @@ export function DataTable<T>({
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={safePage <= 1}
-              className="min-h-[36px] rounded-lg border border-border px-3 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+              className="min-h-[44px] rounded-lg border border-border px-3 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
             >
               ← Sebelumnya
             </button>
@@ -199,7 +281,7 @@ export function DataTable<T>({
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={safePage >= totalPages}
-              className="min-h-[36px] rounded-lg border border-border px-3 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+              className="min-h-[44px] rounded-lg border border-border px-3 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
             >
               Berikutnya →
             </button>
