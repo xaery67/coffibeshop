@@ -26,6 +26,8 @@ const OrderHistoryPage = lazy(() =>
 const ProfilePage = lazy(() =>
   import('./routes/ProfilePage.js').then((m) => ({ default: m.ProfilePage })),
 );
+/** Login staff/owner — halaman mandiri (issue #60). */
+const LoginPage = lazy(() => import('./routes/LoginPage.js').then((m) => ({ default: m.LoginPage })));
 
 /** Admin — shell & halaman terpisah (bundle sendiri). */
 const AdminRoutes = lazy(() => import('./routes/admin/AdminRoutes.js').then((m) => ({ default: m.AdminRoutes })));
@@ -78,13 +80,14 @@ function CustomerShell() {
 
 /**
  * Root aplikasi. Dua shell terpisah: `/admin/*` memakai `AdminShell` (lazy),
- * sisanya `CustomerShell`. Pemisahan route di level ini memastikan customer
- * tidak pernah mengunduh kode admin.
+ * sisanya `CustomerShell`. `/login` mandiri (tanpa chrome customer) — issue #60.
+ * Pemisahan route di level ini memastikan customer tidak pernah mengunduh kode admin.
  */
 export function App() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
+        <Route path="/login" element={<LoginPage />} />
         <Route path="/admin/*" element={<AdminRoutes />} />
         <Route path="/*" element={<CustomerShell />} />
       </Routes>
