@@ -5,15 +5,23 @@ import type { DailySalesRowDTO } from '@coffibeshop/shared';
  * Semua fungsi murni kecuali `downloadCsv` (sentuh DOM/Blob) → mudah diuji.
  */
 
-/** Rp 1.234.567 (tanpa desimal). */
-export function formatIDR(n: number | null | undefined): string {
-  const v = Number.isFinite(n as number) ? (n as number) : 0;
-  return `Rp ${Math.round(v).toLocaleString('id-ID')}`;
+/** Koersi angka toleran: terima number ATAU string (Prisma Decimal → "59940"). */
+export function toNumber(n: number | string | null | undefined): number {
+  if (typeof n === 'number') return Number.isFinite(n) ? n : 0;
+  if (typeof n === 'string') {
+    const v = Number(n);
+    return Number.isFinite(v) ? v : 0;
+  }
+  return 0;
 }
 
-export function formatNumber(n: number | null | undefined): string {
-  const v = Number.isFinite(n as number) ? (n as number) : 0;
-  return v.toLocaleString('id-ID');
+/** Rp 1.234.567 (tanpa desimal). Toleran terhadap string Decimal dari backend. */
+export function formatIDR(n: number | string | null | undefined): string {
+  return `Rp ${Math.round(toNumber(n)).toLocaleString('id-ID')}`;
+}
+
+export function formatNumber(n: number | string | null | undefined): string {
+  return toNumber(n).toLocaleString('id-ID');
 }
 
 /** Persentase perubahan (curr vs prev). `null` bila prev 0 / tak ada basis. */

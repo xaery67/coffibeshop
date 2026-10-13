@@ -6,34 +6,34 @@ import { applyQueueEvent, buildQueueWsUrl, parseQueueEvent, QUEUE_POLL_INTERVAL_
 import { getToken } from './useAuth.js';
 
 /**
- * Order queue realtime (F-011, PRD-BACKEND §2.3).
+ * Order queue realtime (F-011, PRD-BACKEND §2.3) — data NYATA (issue #68).
  *
  * Primary: WebSocket `wss://.../orders/queue/ws?outlet_id=`. Bila WS gagal/terputus,
  * otomatis jatuh ke **short polling** tiap 5s (fallback), lalu coba WS lagi saat
- * `online`. Data awal dari `GET /orders/queue` (juga jadi sumber setelah reconnect).
+ * `online`. Data awal dari `GET /orders/queue`.
+ *
+ * Sumber kebenaran = cache react-query (bukan state lokal), sehingga:
+ * - hasil `PUT /orders/{id}/status` (invalidate → refetch) LANGSUNG terlihat di papan
+ *   meski WS belum tersambung;
+ * - event WS di-`setQueryData` (upsert) agar tidak ada yang terlewat.
  */
 
 export type QueueConnection = 'connecting' | 'live' | 'polling' | 'offline';
 
 export function useAdminQueue(outletId: string | null, enabled = true) {
   const qc = useQueryClient();
-  const [liveOrders, setLiveOrders] = useState<QueueOrderDTO[] | null>(null);
   const [connection, setConnection] = useState<QueueConnection>('connecting');
   const [lastEventAt, setLastEventAt] = useState<number | null>(null);
 
+  const queryKey = useMemo(() => ['admin', 'queue', outletId] as const, [outletId]);
+
   const query = useQuery({
-    queryKey: ['admin', 'queue', outletId],
+    queryKey,
     queryFn: () => getOrderQueue(outletId!),
     enabled: enabled && Boolean(outletId),
     refetchInterval: connection === 'polling' ? QUEUE_POLL_INTERVAL_MS : false,
     staleTime: 0,
   });
-
-  // Snapshot awal / hasil poll → jadikan basis daftar live (kecuali sudah ada event WS).
-  const queryData = query.data;
-  useEffect(() => {
-    if (queryData && liveOrders === null) setLiveOrders(queryData);
-  }, [queryData, liveOrders]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const retryRef = useRef(0);
@@ -65,14 +65,14 @@ export function useAdminQueue(outletId: string | null, enabled = true) {
         retryRef.current = 0;
         setConnection('live');
         // Sinkronkan ulang agar tidak ada event yang terlewat saat terputus.
-        qc.invalidateQueries({ queryKey: ['admin', 'queue', outletId] });
+        qc.invalidateQueries({ queryKey });
       };
 
       ws.onmessage = (ev) => {
         const event = parseQueueEvent(ev.data);
         if (!event) return;
         setLastEventAt(Date.now());
-        setLiveOrders((prev) => applyQueueEvent(prev ?? [], event));
+        qc.setQueryData<QueueOrderDTO[]>(queryKey, (prev) => applyQueueEvent(prev ?? [], event));
       };
 
       ws.onerror = () => {
@@ -103,25 +103,22 @@ export function useAdminQueue(outletId: string | null, enabled = true) {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [outletId, enabled, qc]);
-
-  const orders = liveOrders ?? query.data ?? [];
-  const isLoading = query.isLoading && liveOrders === null;
+  }, [outletId, enabled, qc, queryKey]);
 
   return useMemo(
     () => ({
-      orders,
-      isLoading,
+      orders: query.data ?? [],
+      isLoading: query.isLoading,
       error: query.error as Error | null,
       connection,
       lastEventAt,
       refetch: query.refetch,
     }),
-    [orders, isLoading, query.error, query.refetch, connection, lastEventAt],
+    [query.data, query.isLoading, query.error, query.refetch, connection, lastEventAt],
   );
 }
 
-/** PUT /orders/{id}/status dengan optimistic update pada cache queue. */
+/** PUT /orders/{id}/status — invalidate cache queue agar papan langsung ter-refresh. */
 export function useUpdateOrderStatus(outletId: string | null) {
   const qc = useQueryClient();
   return useMutation({

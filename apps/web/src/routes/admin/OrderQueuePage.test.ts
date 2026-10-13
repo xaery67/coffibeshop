@@ -6,8 +6,10 @@ import { OutletCtx } from '../../components/admin/AdminShell.js';
 import { render, h, waitFor } from '../../test/render.js';
 
 /**
- * OrderQueuePage — render papan antrian dari `GET /orders/queue` (mock).
- * Fokus: kolom Baru/Diproses/Siap/Selesai + aksi status state-machine.
+ * OrderQueuePage — papan antrian dari `GET /orders/queue` NYATA (issue #68).
+ *
+ * Regresi #68: aksi status dulu hanya memunculkan toast tanpa request. Sekarang
+ * klik "Konfirmasi" WAJIB memanggil `PUT /orders/{id}/status` (assert di sini).
  */
 
 function wrap(ui: React.ReactElement) {
@@ -44,15 +46,24 @@ const QUEUE = [
   },
 ];
 
+let calls: { url: string; method: string }[] = [];
+
 beforeEach(() => {
   localStorage.clear();
+  calls = [];
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, data: QUEUE, error: null }),
-    } as unknown as Response),
+    vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      const method = (init?.method ?? 'GET').toUpperCase();
+      calls.push({ url, method });
+      const data = method === 'GET' ? QUEUE : { id: 'q1', status: 'CONFIRMED' };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data, error: null }),
+      } as unknown as Response;
+    }),
   );
   // WebSocket tidak ada di jsdom → hook harus jatuh ke polling tanpa melempar.
   vi.stubGlobal(
@@ -88,6 +99,15 @@ describe('OrderQueuePage', () => {
     // PAID → aksi Konfirmasi + Batalkan; READY → Selesaikan.
     expect(r.text()).toContain('Konfirmasi');
     expect(r.text()).toContain('Selesaikan');
+    r.unmount();
+  });
+
+  it('klik "Konfirmasi" benar-benar memanggil PUT /orders/{id}/status (bukan toast palsu)', async () => {
+    const r = render(wrap(h(OrderQueuePage, null)));
+    await waitFor(() => expect(r.text()).toContain('ORD-1001'));
+    const confirm = r.$$('button').find((b) => b.textContent?.includes('Konfirmasi'))!;
+    r.clickNode(confirm);
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/orders/q1/status'))).toBe(true));
     r.unmount();
   });
 });

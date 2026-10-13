@@ -35,3 +35,32 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   }
   return body.data as T;
 }
+
+/**
+ * Fetch wrapper untuk respons **biner** (mis. PDF kitchen ticket).
+ *
+ * Berbeda dari `apiFetch` (yang meng-unwrap envelope JSON), fungsi ini mengembalikan
+ * `Blob` mentah saat sukses. Bila gagal, backend tetap mengirim envelope JSON —
+ * pesan `error.message` di-ekstraksi bila memungkinkan.
+ */
+export async function apiFetchBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const res = await fetch(`${BASE}${path}`, {
+    ...init,
+    headers: {
+      'X-Guest-Id': getGuestId(),
+      ...authHeader(),
+      ...(init.headers ?? {}),
+    },
+  });
+  if (!res.ok) {
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as ApiResponse<unknown>;
+      if (body?.error?.message) message = body.error.message;
+    } catch {
+      /* respons gagal bukan JSON (mis. halaman 404 HTML) — pakai pesan default. */
+    }
+    throw new Error(message);
+  }
+  return res.blob();
+}
