@@ -9,7 +9,7 @@ export function ProductCard({ product }: { product: ProductDTO }) {
   return (
     <Card interactive className="flex flex-col p-0">
       <Link
-        to={`/product/${product.id}`}
+        to={`/product/${product.slug ?? product.id}`}
         className="flex flex-1 flex-col rounded-card focus-visible:outline-none"
         aria-label={`Lihat detail ${product.name}`}
       >
