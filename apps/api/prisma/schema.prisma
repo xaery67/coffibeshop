@@ -314,6 +314,21 @@ model PaymentIdempotency {
   @@map("payment_idempotency")
 }
 
+model PaymentIntent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  order_id            String   @db.Uuid
+  provider            String
+  provider_order_id   String   @unique @map("provider_order_id")
+  method              String
+  idempotency_key     String?  @map("idempotency_key")
+  status              String   @default("pending")
+  created_at          DateTime @default(now()) @map("created_at")
+  updated_at          DateTime @updatedAt @map("updated_at")
+
+  @@index([order_id])
+  @@map("payment_intents")
+}
+
 // ═══════════════ LOYALTY & VOUCHER ═══════════════
 model LoyaltyPoint {
   id         String   @id @default(uuid()) @db.Uuid

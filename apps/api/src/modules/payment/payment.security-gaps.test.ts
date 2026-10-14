@@ -28,14 +28,19 @@ const db = vi.hoisted(() => ({
   idempotency: new Map<string, any>(),
   orders: [] as any[],
   logs: [] as any[],
+  paymentIntents: [] as any[],
 }));
 
 vi.mock('midtrans-client', () => {
   class Snap {
-    async createTransaction() {
+    async createTransaction(input: any) {
+      // Return a response with our provider_order_id
+      const providerOrderId = input.transaction_details?.order_id || 'test-provider-order-id';
       return {
         token: 'snap-token-123',
         redirect_url: 'https://app.sandbox.midtrans.com/snap/v2/vtweb/snap-token-123',
+        // Include our provider_order_id in the response
+        order_id: providerOrderId,
       };
     }
   }
@@ -89,6 +94,26 @@ vi.mock('../../config/prisma.js', () => {
         create: async ({ data }: any) => {
           db.payments.push(data);
           return data;
+        },
+      },
+      paymentIntent: {
+        findUnique: async ({ where }: any) => {
+          if (where.provider_order_id) {
+            return db.paymentIntents.find((pi) => pi.provider_order_id === where.provider_order_id) ?? null;
+          }
+          return null;
+        },
+        create: async ({ data }: any) => {
+          db.paymentIntents.push(data);
+          return data;
+        },
+        update: async ({ where, data }: any) => {
+          const idx = db.paymentIntents.findIndex((pi) => pi.id === where.id);
+          if (idx >= 0) {
+            db.paymentIntents[idx] = { ...db.paymentIntents[idx], ...data };
+            return db.paymentIntents[idx];
+          }
+          return null;
         },
       },
       order: {

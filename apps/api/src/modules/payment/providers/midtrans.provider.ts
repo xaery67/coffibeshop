@@ -45,51 +45,71 @@ export class MidtransProvider implements PaymentProvider {
     return new MidtransProvider(snapClient, coreClient);
   }
 
+  /**
+   * Generate unique provider_order_id for Midtrans.
+   * Format: {order_number}-{attempt} where attempt comes from idempotency_key suffix
+   * Midtrans requires unique order_id per transaction attempt.
+   */
+  private generateProviderOrderId(input: InitiatePaymentInput): string {
+    // Use order_number if available, fallback to orderId
+    const baseOrderId = input.orderId; // This is the internal UUID
+    // Create unique suffix from method + timestamp/random
+    const suffix = `${input.method}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+    return `${baseOrderId}-${suffix}`;
+  }
+
   async initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
-      const itemDetails = [{
-        id: input.orderId,
-        price: input.amount,
-        quantity: 1,
-        name: `Order ${input.orderId}`,
-      }];
+    const itemDetails = [{
+      id: input.orderId,
+      price: input.amount,
+      quantity: 1,
+      name: `Order ${input.orderId}`,
+    }];
 
-      // Build customerDetails only with non-empty values (Midtrans rejects empty email/phone)
-      const customerDetails: Record<string, string> = {};
-      if (input.customerEmail?.trim()) customerDetails.email = input.customerEmail.trim();
-      if (input.customerPhone?.trim()) customerDetails.phone = input.customerPhone.trim();
-      if (input.customerName?.trim()) customerDetails.first_name = input.customerName.trim();
+    // Build customerDetails only with non-empty values (Midtrans rejects empty email/phone)
+    const customerDetails: Record<string, string> = {};
+    if (input.customerEmail?.trim()) customerDetails.email = input.customerEmail.trim();
+    if (input.customerPhone?.trim()) customerDetails.phone = input.customerPhone.trim();
+    if (input.customerName?.trim()) customerDetails.first_name = input.customerName.trim();
 
-      const transactionDetails = {
-        order_id: input.orderId,
-        gross_amount: input.amount,
+    // Generate unique provider_order_id for this attempt
+    const providerOrderId = this.generateProviderOrderId(input);
+
+    const transactionDetails = {
+      order_id: providerOrderId,
+      gross_amount: input.amount,
+    };
+
+    try {
+      const snapResponse = await this.snapClient.createTransaction({
+        transaction_details: transactionDetails,
+        item_details: itemDetails,
+        customer_details: Object.keys(customerDetails).length > 0 ? customerDetails : undefined,
+        enabled_payments: [input.method],
+        callbacks: {
+          finish: input.callbackUrl,
+        },
+      });
+
+      return {
+        paymentId: snapResponse.token || randomUUID(),
+        provider: this.name,
+        paymentUrl: snapResponse.redirect_url,
+        token: snapResponse.token,
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        rawResponse: {
+          ...(snapResponse as unknown as Record<string, unknown>),
+          // Include our provider_order_id so we can map it back
+          _our_provider_order_id: providerOrderId,
+        },
       };
-
-      try {
-        const snapResponse = await this.snapClient.createTransaction({
-          transaction_details: transactionDetails,
-          item_details: itemDetails,
-          customer_details: Object.keys(customerDetails).length > 0 ? customerDetails : undefined,
-          enabled_payments: [input.method],
-          callbacks: {
-            finish: input.callbackUrl,
-          },
-        });
-
-        return {
-          paymentId: snapResponse.token || randomUUID(),
-          provider: this.name,
-          paymentUrl: snapResponse.redirect_url,
-          token: snapResponse.token,
-          expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-          rawResponse: snapResponse as unknown as Record<string, unknown>,
-        };
-      } catch (error: any) {
-        if (error?.statusCode === 400 && error?.ApiResponse?.error_messages?.some?.((m: string) => m.includes('duplicate'))) {
-          throw Conflict('Transaksi sudah ada untuk order ini');
-        }
-        throw BadRequest(`Midtrans error: ${error?.message || error?.ApiResponse?.error_messages?.[0] || 'Unknown error'}`);
+    } catch (error: any) {
+      if (error?.statusCode === 400 && error?.ApiResponse?.error_messages?.some?.((m: string) => m.includes('duplicate'))) {
+        throw Conflict('Transaksi sudah ada untuk order ini');
       }
+      throw BadRequest(`Midtrans error: ${error?.message || error?.ApiResponse?.error_messages?.[0] || 'Unknown error'}`);
     }
+  }
 
   verifyWebhook(payload: Record<string, unknown>, _signature: string | undefined): WebhookVerificationResult {
     const signatureKey = String(payload.signature_key ?? '');
