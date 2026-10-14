@@ -52,13 +52,15 @@ const EnvSchema = z.object({
   PAYMENT_METHODS: z.string().default('qris,gopay,shopeepay,virtual_account').transform((v) => v.split(',').map(s => s.trim()).filter(Boolean)),
 
   // Business config
-  TAX_RATE: z.coerce.number().default(0.11),
-  POINT_VALUE: z.coerce.number().default(1),
-  CURRENCY: z.string().default('IDR'),
-  SHIPPING_FLAT_FEE: z.coerce.number().default(10000),
-  SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(15000),
-  TRACKING_POLL_INTERVAL_MS: z.coerce.number().default(3000),
-});
+    TAX_RATE: z.coerce.number().default(0.11),
+    POINT_VALUE: z.coerce.number().default(1),
+    // Poin yang didapat per Rp POINT_EARN_PER_IDR (mis. 1000 = 1 poin per Rp 1000)
+    POINT_EARN_PER_IDR: z.coerce.number().default(1000),
+    CURRENCY: z.string().default('IDR'),
+    SHIPPING_FLAT_FEE: z.coerce.number().default(10000),
+    SSE_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(15000),
+    TRACKING_POLL_INTERVAL_MS: z.coerce.number().default(3000),
+  });
 
 // .env boleh memuat nilai kosong (mis. `SUPABASE_URL=` belum diisi user) —
 // perlakukan sebagai UNSET agar default/opsional schema tetap berlaku,

@@ -85,6 +85,8 @@ services:
       # Business config (dapat di-override lewat .env)
       TAX_RATE: ${TAX_RATE:-0.11}
       POINT_VALUE: ${POINT_VALUE:-1}
+      # Poin yang didapat per Rp POINT_EARN_PER_IDR (mis. 1000 = 1 poin per Rp 1000)
+      POINT_EARN_PER_IDR: ${POINT_EARN_PER_IDR:-1000}
       CURRENCY: ${CURRENCY:-IDR}
       SHIPPING_FLAT_FEE: ${SHIPPING_FLAT_FEE:-10000}
     ports:

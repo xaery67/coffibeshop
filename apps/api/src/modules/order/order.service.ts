@@ -516,35 +516,41 @@ export class OrderService {
     }
 
     let updated;
-    try {
-      updated = await prisma.$transaction(async (tx) => {
-        const o = await tx.order.update({
-          where: { id: orderId },
-          data: { status: body.status },
-        });
+        try {
+          updated = await prisma.$transaction(async (tx) => {
+            const o = await tx.order.update({
+              where: { id: orderId },
+              data: { status: body.status },
+            });
 
-        await tx.orderStatusLog.create({
-          data: {
-            order_id: orderId,
-            from_status: order.status,
-            to_status: body.status,
-            note: body.note ?? null,
-            changed_by: body.changed_by ?? null,
-          },
-        });
+            await tx.orderStatusLog.create({
+              data: {
+                order_id: orderId,
+                from_status: order.status,
+                to_status: body.status,
+                note: body.note ?? null,
+                changed_by: body.changed_by ?? null,
+              },
+            });
 
-        return o;
-      });
-    } catch (err) {
-      // Trigger inventori melempar check_violation saat stok kurang → petakan ke 409.
-      const msg = (err as Error).message ?? '';
-      if (/Stok .* tidak mencukupi/.test(msg)) {
-        throw Conflict(msg.split('\n')[0]);
-      }
-      throw err;
-    }
+            return o;
+          });
+        } catch (err) {
+                  // Trigger inventori melempar check_violation saat stok kurang → petakan ke 409.
+                  const msg = (err as Error).message ?? '';
+                  if (/Stok .* tidak mencukupi/.test(msg)) {
+                    const m = msg.match(/Stok .* tidak mencukupi[^\n"]*/);
+                    throw Conflict(m ? m[0] : 'Stok tidak mencukupi');
+                  }
+                  throw err;
+                }
 
-    await redisPubSub.publish(
+        // Auto-award loyalty points when order reaches COMPLETED (idempotent)
+        if (body.status === 'COMPLETED' && order.status !== 'COMPLETED' && order.user_id) {
+          await this.awardLoyaltyPoints(orderId, order.user_id, Number(updated.total));
+        }
+
+        await redisPubSub.publish(
       'order:status',
       JSON.stringify({
         type: 'status',
@@ -560,10 +566,35 @@ export class OrderService {
 
     publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
         return updated;
-      }
+          }
 
-      /**
-       * Generate kitchen ticket PDF for order.
+          /**
+           * Award loyalty points for completed order (idempotent).
+           * Points = floor(total / POINT_EARN_PER_IDR)
+           * Creates LoyaltyPoint record with type='earned' if not already exists for this order.
+           */
+          private async awardLoyaltyPoints(orderId: string, userId: string, total: number): Promise<void> {
+            // Check if already awarded for this order
+            const existing = await prisma.loyaltyPoint.findFirst({
+              where: { order_id: orderId, type: 'earned' },
+            });
+            if (existing) return; // Already awarded, idempotent
+
+            const points = Math.floor(total / env.POINT_EARN_PER_IDR);
+            if (points <= 0) return; // No points for small orders
+
+            await prisma.loyaltyPoint.create({
+              data: {
+                user_id: userId,
+                points,
+                type: 'earned',
+                order_id: orderId,
+              },
+            });
+          }
+
+          /**
+           * Generate kitchen ticket PDF for order.
        * Returns PDF buffer with Content-Type: application/pdf
        */
       async printTicket(orderId: string, userRole: string, outletId?: string): Promise<Buffer> {
