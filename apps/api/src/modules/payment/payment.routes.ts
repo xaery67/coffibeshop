@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler, sendOk, BadRequest } from '../../lib/http.js';
 import { optionalAuth } from '../../middleware/auth.js';
 import { PaymentService } from './payment.service.js';
+import { env } from '../../config/env.js';
 
 export const paymentRouter = Router();
 let paymentServiceInstance: PaymentService | null = null;
@@ -15,7 +16,7 @@ async function getPaymentService(): Promise<PaymentService> {
 
 /** GET /api/v1/payments/methods — metode aktif (dari config). */
 paymentRouter.get('/methods', asyncHandler(async (_req, res) =>
-  sendOk(res, ['qris', 'gopay', 'ovo', 'dana', 'linkaja', 'shopeepay', 'virtual_account', 'credit_card', 'apple_pay', 'google_pay']),
+  sendOk(res, env.PAYMENT_METHODS),
 ));
 
 /** POST /api/v1/payments/initiate — mulai pembayaran (idempotent by Idempotency-Key). */

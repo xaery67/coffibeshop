@@ -48,6 +48,9 @@ const EnvSchema = z.object({
   XENDIT_SECRET_KEY: z.string().optional(),
   XENDIT_CALLBACK_TOKEN: z.string().optional(),
 
+  // Payment methods aktif (komaseparated) — default qris,gopay,shopeepay,virtual_account
+  PAYMENT_METHODS: z.string().default('qris,gopay,shopeepay,virtual_account').transform((v) => v.split(',').map(s => s.trim()).filter(Boolean)),
+
   // Business config
   TAX_RATE: z.coerce.number().default(0.11),
   POINT_VALUE: z.coerce.number().default(1),

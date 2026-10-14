@@ -171,12 +171,12 @@ beforeEach(() => {
 });
 
 describe('GET /payments/methods — daftar metode aktif (publik)', () => {
-  it('mengembalikan envelope sukses berisi 10 metode', async () => {
+  it('mengembalikan envelope sukses berisi 4 metode', async () => {
     const res = await srv.request('GET', '/api/v1/payments/methods');
     expect(res.status).toBe(200);
     const data = expectOk(res.json);
     expect(Array.isArray(data)).toBe(true);
-    expect(data).toHaveLength(10);
+    expect(data).toHaveLength(4);
     expect(data).toContain('qris');
     expect(data).toContain('virtual_account');
   });
