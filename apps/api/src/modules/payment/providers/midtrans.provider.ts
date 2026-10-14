@@ -46,16 +46,21 @@ export class MidtransProvider implements PaymentProvider {
   }
 
   /**
-   * Generate unique provider_order_id for Midtrans.
-   * Format: {order_number}-{attempt} where attempt comes from idempotency_key suffix
-   * Midtrans requires unique order_id per transaction attempt.
+   * Generate unique provider_order_id untuk Midtrans.
+   *
+   * Midtrans **mengunci `order_id` per transaksi** → tiap percobaan (termasuk
+   * ganti metode / retry) WAJIB memakai ID baru. ID internal order (UUID) tidak
+   * boleh dipakai mentah, karena transaksi pertama akan "memakan" ID tersebut.
+   *
+   * Batasan keras Midtrans: panjang `order_id` **maks 50 karakter** (terverifikasi
+   * live — 51 karakter ditolak `transaction_details.order_id is too long`).
+   * Format di sini ≤ 38 karakter pada kasus terburuk (method `virtual_account`).
    */
   private generateProviderOrderId(input: InitiatePaymentInput): string {
-    // Use order_number if available, fallback to orderId
-    const baseOrderId = input.orderId; // This is the internal UUID
-    // Create unique suffix from method + timestamp/random
-    const suffix = `${input.method}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
-    return `${baseOrderId}-${suffix}`;
+    const orderPrefix = input.orderId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
+    const suffix = `${input.method}-${Date.now().toString(36)}-${randomUUID().slice(0, 4)}`;
+    // Jaga-jaga: potong agar tidak pernah melewati batas 50 karakter Midtrans.
+    return `${orderPrefix}-${suffix}`.slice(0, 50);
   }
 
   async initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult> {
