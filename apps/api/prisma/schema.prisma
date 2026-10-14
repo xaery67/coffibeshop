@@ -356,6 +356,21 @@ model Voucher {
   @@map("vouchers")
 }
 
+model Reward {
+  id             String    @id @default(uuid()) @db.Uuid
+  name           String    @unique
+  description    String?
+  points_cost    Int
+  discount_amount Decimal  @default(0) @db.Decimal(12, 2)
+  min_purchase   Decimal   @default(0) @db.Decimal(12, 2)
+  is_active      Boolean   @default(true)
+  stock          Int?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+
+  @@map("rewards")
+}
+
 // ═══════════════ INVENTORY ═══════════════
 model InventoryItem {
   id         String   @id @default(uuid()) @db.Uuid

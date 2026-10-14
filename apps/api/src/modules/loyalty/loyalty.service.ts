@@ -1,6 +1,6 @@
 import { prisma } from '../../config/prisma.js';
 import { env } from '../../config/env.js';
-import { BadRequest } from '../../lib/http.js';
+import { BadRequest, NotFound } from '../../lib/http.js';
 
 export class LoyaltyService {
   /** GET /api/v1/loyalty/points — saldo poin member (earned - redeemed). */
@@ -27,6 +27,14 @@ export class LoyaltyService {
     };
   }
 
+  /** GET /api/v1/loyalty/rewards — daftar reward aktif. */
+  async getRewards() {
+    return prisma.reward.findMany({
+      where: { is_active: true },
+      orderBy: { points_cost: 'asc' },
+    });
+  }
+
   /** GET /api/v1/loyalty/vouchers — daftar voucher aktif. */
   async getVouchers() {
     return prisma.voucher.findMany({
@@ -41,49 +49,107 @@ export class LoyaltyService {
     });
   }
 
-  /** POST /api/v1/loyalty/redeem — tukar poin ke voucher. */
-  async redeemPoints(userId: string, pointsToRedeem: number) {
-    if (pointsToRedeem <= 0) throw BadRequest('points_to_redeem harus > 0');
+  /** POST /api/v1/loyalty/redeem — tukar poin ke voucher via reward catalog. */
+  async redeemPoints(userId: string, input: { reward_id?: string; points_to_redeem?: number }, idempotencyKey?: string) {
+    // Idempotency check
+    if (idempotencyKey) {
+          const existing = await prisma.paymentIdempotency.findUnique({
+            where: { idempotency_key: `loyalty:redeem:${idempotencyKey}` },
+          });
+          if (existing) {
+            // Return cached response
+            return existing.response;
+          }
+        }
 
-    // Check current balance
-    const points = await this.getPoints(userId);
-    if (pointsToRedeem > points.balance) {
-      throw BadRequest('Saldo poin tidak cukup');
-    }
+        let reward: any;
+        let pointsToRedeem: number;
+        let discountAmount: number;
+        let minPurchase: number;
 
-    // Check if there's a voucher that matches this exact redemption
-    // For now, we create a "loyalty voucher" internally
-    // In Phase 2, this could be a catalog of rewards
-    
-    // Record the redemption
-    await prisma.loyaltyPoint.create({
-      data: {
-        user_id: userId,
-        points: pointsToRedeem,
-        type: 'redeemed',
-        order_id: null,
-      },
-    });
+        if (input.reward_id) {
+          // New flow: redeem via reward catalog
+          reward = await prisma.reward.findUnique({ where: { id: input.reward_id } });
+          if (!reward) throw NotFound('Reward tidak ditemukan');
+          if (!reward.is_active) throw BadRequest('Reward tidak aktif');
+          if (reward.stock !== null && reward.stock <= 0) throw BadRequest('Stok reward habis');
 
-    // Return a simple voucher code for the redeemed amount
-    const voucherCode = `LOYALTY-${userId.slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-    const discountAmount = pointsToRedeem * env.POINT_VALUE;
+          pointsToRedeem = reward.points_cost;
+          discountAmount = Number(reward.discount_amount);
+          minPurchase = Number(reward.min_purchase);
+        } else if (input.points_to_redeem) {
+          // Backward compat: direct points redeem (deprecated)
+          if (input.points_to_redeem <= 0) throw BadRequest('points_to_redeem harus > 0');
+          pointsToRedeem = input.points_to_redeem;
+          discountAmount = pointsToRedeem * env.POINT_VALUE;
+          minPurchase = 0;
+        } else {
+          throw BadRequest('Harus menyertakan reward_id atau points_to_redeem');
+        }
 
-    await prisma.voucher.create({
-      data: {
-        code: voucherCode,
-        discount_amount: discountAmount,
-        min_purchase: 0,
-        is_active: true,
-        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-      },
-    });
+        // Check current balance
+        const points = await this.getPoints(userId);
+        if (pointsToRedeem > points.balance) {
+          throw BadRequest('Saldo poin tidak cukup');
+        }
 
-    return {
-      voucher_code: voucherCode,
-      points_redeemed: pointsToRedeem,
-      discount_amount: discountAmount,
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    };
-  }
-}
+        // Atomic transaction: redeem points + create voucher + decrement stock
+        const result = await prisma.$transaction(async (tx) => {
+          // Record the redemption
+          await tx.loyaltyPoint.create({
+            data: {
+              user_id: userId,
+              points: pointsToRedeem,
+              type: 'redeemed',
+              order_id: null,
+            },
+          });
+
+          // Generate voucher code
+          const voucherCode = `REWARD-${userId.slice(0, 8).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
+          const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+          // Create voucher
+          await tx.voucher.create({
+            data: {
+              code: voucherCode,
+              discount_amount: discountAmount,
+              min_purchase: minPurchase,
+              is_active: true,
+              expires_at: expiresAt,
+            },
+          });
+
+          // Decrement reward stock if applicable
+          if (reward && reward.stock !== null) {
+            await tx.reward.update({
+              where: { id: reward.id },
+              data: { stock: { decrement: 1 } },
+            });
+          }
+
+          return {
+            voucher_code: voucherCode,
+            points_redeemed: pointsToRedeem,
+            discount_amount: discountAmount,
+            min_purchase: minPurchase,
+            expires_at: expiresAt,
+            reward_name: reward?.name ?? null,
+          };
+        });
+
+        // Store idempotency response
+                if (idempotencyKey) {
+                  await prisma.paymentIdempotency.create({
+                    data: {
+                      idempotency_key: `loyalty:redeem:${idempotencyKey}`,
+                      provider: 'loyalty',
+                      request_hash: JSON.stringify(input),
+                      response: result,
+                    },
+                  });
+                }
+
+                return result;
+          }
+        }
