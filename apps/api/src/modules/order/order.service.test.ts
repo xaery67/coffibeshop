@@ -213,11 +213,25 @@ vi.mock('../../config/prisma.js', () => {
       },
     },
     outlet: {
-      findUnique: async ({ where: _where }: any = {}) => {
-        return h.outlets.find((o) => o.id === _where.id) ?? null;
-      },
-    },
-    $transaction: async (fn: any) => fn(tx),
+          findUnique: async ({ where: _where }: any = {}) => {
+            return h.outlets.find((o) => o.id === _where.id) ?? null;
+          },
+        },
+        loyaltyPoint: {
+          findFirst: async ({ where }: any = {}) => {
+            if (!where) return null;
+            return h.loyalty.find((lp) => {
+              if (where.order_id && lp.order_id !== where.order_id) return false;
+              if (where.type && lp.type !== where.type) return false;
+              return true;
+            }) ?? null;
+          },
+          create: async ({ data }: any) => {
+            h.loyalty.push(data);
+            return data;
+          },
+        },
+        $transaction: async (fn: any) => fn(tx),
   };
   return { prisma };
 });
