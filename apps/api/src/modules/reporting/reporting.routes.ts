@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler, sendOk } from '../../lib/http.js';
-import { requireAuth, requireMinRole } from '../../middleware/auth.js';
+import { requireAuth, requireMinRole, requireRole } from '../../middleware/auth.js';
 import { ReportingService } from './reporting.service.js';
 
 /**
@@ -17,22 +17,22 @@ function outletOf(req: { user?: { outlet_id?: string | null }; query: Record<str
   return fromUser ?? fromQuery;
 }
 
-/** GET /api/v1/reports/daily?outlet_id=&date= */
+/** GET /api/v1/reports/daily?outlet_id=&date= — laporan harian (owner/manager/finance). */
 reportingRouter.get(
   '/daily',
   requireAuth,
-  requireMinRole('kasir'),
+  requireRole('owner', 'manager', 'finance'),
   asyncHandler(async (req, res) => {
     const date = typeof req.query.date === 'string' ? req.query.date : undefined;
     sendOk(res, await service.getDailyReport(outletOf(req as never), date));
   }),
 );
 
-/** GET /api/v1/reports/monthly?outlet_id=&month=&year= */
+/** GET /api/v1/reports/monthly?outlet_id=&month=&year= — laporan bulanan (owner/manager/finance). */
 reportingRouter.get(
   '/monthly',
   requireAuth,
-  requireMinRole('kasir'),
+  requireRole('owner', 'manager', 'finance'),
   asyncHandler(async (req, res) => {
     const year = req.query.year ? Number(req.query.year) : undefined;
     const month = req.query.month ? Number(req.query.month) : undefined;
@@ -40,18 +40,23 @@ reportingRouter.get(
   }),
 );
 
-/** GET /api/v1/reports/top-products?outlet_id=&period=7d|30d */
+/** GET /api/v1/reports/top-products?outlet_id=&period=7d|30d — produk terlaris (owner/manager/finance). */
 reportingRouter.get(
   '/top-products',
   requireAuth,
-  requireMinRole('kasir'),
+  requireRole('owner', 'manager', 'finance'),
   asyncHandler(async (req, res) => {
     const period = req.query.period === '30d' ? '30d' : '7d';
     sendOk(res, await service.getTopProducts(outletOf(req as never), period));
   }),
 );
 
-/** GET /api/v1/reports/kpi?outlet_id=&date= — KPI dashboard admin. */
+/**
+ * GET /api/v1/reports/kpi?outlet_id=&date= — KPI dashboard admin.
+ * Minimal kasir: dashboard `/admin` dipakai SEMUA staf (kasir/barista butuh
+ * ringkasan operasional). Laporan keuangan detail di endpoint lain dibatasi
+ * ke owner/manager/finance (lihat ADMIN-WEB.md §RBAC).
+ */
 reportingRouter.get(
   '/kpi',
   requireAuth,
@@ -62,11 +67,11 @@ reportingRouter.get(
   }),
 );
 
-/** GET /api/v1/reports/export/accounting?outlet_id=&year=&month=&format=csv */
+/** GET /api/v1/reports/export/accounting?outlet_id=&year=&month=&format=csv — owner/manager/finance. */
 reportingRouter.get(
   '/export/accounting',
   requireAuth,
-  requireMinRole('manager'),
+  requireRole('owner', 'manager', 'finance'),
   asyncHandler(async (req, res) => {
     const year = req.query.year ? Number(req.query.year) : undefined;
     const month = req.query.month ? Number(req.query.month) : undefined;

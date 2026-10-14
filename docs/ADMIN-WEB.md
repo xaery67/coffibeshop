@@ -56,10 +56,18 @@ Saat backend mendarat: set `VITE_ADMIN_MOCK=false` (atau hapus cabang mock di
 
 | Kapabilitas | owner | manager | finance | kasir | barista |
 |---|---|---|---|---|---|
-| Akses AdminShell | ✔ | ✔ | ✖ | ✔ | ✔ |
-| Laporan | ✔ | ✔ | ✔ | ✖ | ✖ |
+| Akses AdminShell | ✔ | ✔ | ✔ | ✔ | ✔ |
+| Laporan keuangan (`/admin/reports`, `/reports/daily\|monthly\|top-products\|export/*`) | ✔ | ✔ | ✔ | ✖ | ✖ |
+| KPI dashboard (`/reports/kpi`) | ✔ | ✔ | ✔ | ✔ | ✔ |
 | Tulis menu | ✔ | ✔ | ✖ | ✖ | ✖ |
 | Ganti outlet | ✔ | ✔ | ✔ | ✖ (terkunci) | ✖ (terkunci) |
+
+> **KPI vs laporan:** `GET /reports/kpi` minimal **kasir** karena dashboard `/admin`
+> dipakai semua staf untuk ringkasan operasional (pendapatan hari ini, pesanan,
+> low-stock). Grafik tren & tabel produk terlaris bersumber dari
+> `/reports/monthly` & `/reports/top-products` yang dibatasi **owner/manager/finance**,
+> sehingga keduanya **disembunyikan** untuk kasir/barista (`AdminDashboardPage`).
+> Backend menegakkan ini lewat `requireRole('owner','manager','finance')`.
 
 ## Gate
 

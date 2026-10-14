@@ -1,5 +1,7 @@
 import { useDashboardKpi, useLowStock, useMonthlyReport, useTopProducts } from '../../hooks/useAdminReports.js';
 import { useAdminOutlet } from '../../components/admin/AdminShell.js';
+import { useAuth } from '../../hooks/useAuth.js';
+import { canAccessReports } from '../../lib/roles.js';
 import { KpiCard } from '../../components/admin/KpiCard.js';
 import { SalesChart } from '../../components/admin/SalesChart.js';
 import { DataTable, type Column } from '../../components/ui/DataTable.js';
@@ -28,10 +30,15 @@ const topColumns: Column<TopProductDTO>[] = [
  */
 export function AdminDashboardPage() {
   const { outletId } = useAdminOutlet();
+  const { user } = useAuth();
+  // Grafik & top-produk bersumber dari endpoint laporan keuangan
+  // (owner/manager/finance). Kasir/barista tetap mendapat KPI + low-stock,
+  // tanpa data keuangan detail — selaras ADMIN-WEB.md §RBAC & reporting.routes.
+  const canSeeReports = canAccessReports(user?.role);
   const now = new Date();
   const kpi = useDashboardKpi(outletId);
-  const monthly = useMonthlyReport(outletId, now.getMonth() + 1, now.getFullYear());
-  const top = useTopProducts(outletId, '7d');
+  const monthly = useMonthlyReport(canSeeReports ? outletId : null, now.getMonth() + 1, now.getFullYear());
+  const top = useTopProducts(canSeeReports ? outletId : null, '7d');
   const low = useLowStock(outletId);
 
   const series = (monthly.data?.days ?? [])
@@ -61,37 +68,41 @@ export function AdminDashboardPage() {
         )}
       </section>
 
-      <section className="rounded-card border border-brand-100 bg-white p-4" aria-label="Tren penjualan 14 hari">
-        <h2 className="mb-3 text-h3 text-text">Tren penjualan (14 hari)</h2>
-        {monthly.isLoading ? (
-          <Skeleton variant="row" />
-        ) : monthly.error ? (
-          <p role="alert" className="text-sm text-error">
-            Gagal memuat tren: {monthly.error.message}
-          </p>
-        ) : (
-          <SalesChart points={series} ariaLabel="Pendapatan bersih 14 hari terakhir" />
-        )}
-      </section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section aria-label="Produk terlaris" className="space-y-2">
-          <h2 className="text-h3 text-text">Produk terlaris (7 hari)</h2>
-          {top.error ? (
+      {canSeeReports && (
+        <section className="rounded-card border border-brand-100 bg-white p-4" aria-label="Tren penjualan 14 hari">
+          <h2 className="mb-3 text-h3 text-text">Tren penjualan (14 hari)</h2>
+          {monthly.isLoading ? (
+            <Skeleton variant="row" />
+          ) : monthly.error ? (
             <p role="alert" className="text-sm text-error">
-              Gagal memuat produk terlaris: {top.error.message}
+              Gagal memuat tren: {monthly.error.message}
             </p>
           ) : (
-            <DataTable
-              columns={topColumns}
-              rows={top.data?.products ?? []}
-              rowKey={(r) => r.product_id}
-              pageSize={5}
-              emptyMessage={top.isLoading ? 'Memuat…' : 'Belum ada penjualan.'}
-              data-testid="top-products-table"
-            />
+            <SalesChart points={series} ariaLabel="Pendapatan bersih 14 hari terakhir" />
           )}
         </section>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {canSeeReports && (
+          <section aria-label="Produk terlaris" className="space-y-2">
+            <h2 className="text-h3 text-text">Produk terlaris (7 hari)</h2>
+            {top.error ? (
+              <p role="alert" className="text-sm text-error">
+                Gagal memuat produk terlaris: {top.error.message}
+              </p>
+            ) : (
+              <DataTable
+                columns={topColumns}
+                rows={top.data?.products ?? []}
+                rowKey={(r) => r.product_id}
+                pageSize={5}
+                emptyMessage={top.isLoading ? 'Memuat…' : 'Belum ada penjualan.'}
+                data-testid="top-products-table"
+              />
+            )}
+          </section>
+        )}
 
         <section aria-label="Stok menipis" className="space-y-2">
           <h2 className="text-h3 text-text">Stok menipis</h2>
