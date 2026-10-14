@@ -59,7 +59,7 @@ export async function priceCart(items: any[], opts?: { shipping?: number; discou
   for (const item of items) {
     const product = productMap.get(item.product_id);
     if (!product || !product.is_active || !product.is_available) {
-      priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Produk tidak tersedia' });
+      priced.push({ ...item, product_name: product?.name, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Produk tidak tersedia' });
       continue;
     }
 
@@ -67,24 +67,22 @@ export async function priceCart(items: any[], opts?: { shipping?: number; discou
     if (item.variant_id) {
       const variant = product.variants.find(v => v.id === item.variant_id);
       if (variant && variant.stock_quantity !== null && variant.stock_quantity <= 0) {
-        priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Varian habis' });
+        priced.push({ ...item, product_name: product.name, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Varian habis' });
         continue;
       }
     }
 
-    // Bug #3: validasi opsi milik produk yang benar
+    // Bug #3: validasi opsi milik produk yang benar.
+    // PENTING: gunakan flag LOKAL per-item. JANGAN mengintip `priced[priced.length - 1]`
+    // (elemen terakhir GLOBAL): bila dua baris cart punya product_id sama dan baris
+    // pertama unavailable, baris kedua yang VALID ikut ter-skip → checkout gagal
+    // dengan "Ada item yang tidak tersedia" (bug checkout).
     const allValues = product.options.flatMap((o) => o.values);
-    for (const oid of item.option_ids ?? []) {
-      const v = allValues.find((x) => x.id === oid);
-      if (!v) {
-        priced.push({ ...item, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Opsi tidak valid untuk produk ini' });
-        // mark as invalid to skip
-        break;
-      }
-    }
-    // If we pushed an unavailable item due to invalid option, skip the rest
-    const lastPriced = priced[priced.length - 1];
-    if (lastPriced && lastPriced.product_id === item.product_id && lastPriced.unavailable) {
+    const hasInvalidOption = (item.option_ids ?? []).some(
+      (oid: string) => !allValues.find((x) => x.id === oid),
+    );
+    if (hasInvalidOption) {
+      priced.push({ ...item, product_name: product.name, unavailable: true, unit_price: 0, line_total: 0, unavailable_reason: 'Opsi tidak valid untuk produk ini' });
       continue;
     }
 

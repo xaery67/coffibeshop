@@ -131,7 +131,14 @@ export class OrderService {
         discount,
         pointsDiscount,
       });
-      if (priced.items.some((i: any) => i.unavailable)) throw Conflict('Ada item yang tidak tersedia');
+      if (priced.items.some((i: any) => i.unavailable)) {
+        // Pesan actionable: sebutkan item & alasannya, jangan sekadar "ada item tidak tersedia".
+        const bad = priced.items.filter((i: any) => i.unavailable);
+        const detail = bad
+          .map((i: any) => `${i.product_name ?? 'Item'} (${i.unavailable_reason ?? 'tidak tersedia'})`)
+          .join('; ');
+        throw Conflict(`Ada item yang tidak tersedia: ${detail}. Hapus item tersebut dari keranjang untuk melanjutkan.`);
+      }
 
       // ─── Pre-check stok BOM (2b) ───
       // Hitung total kebutuhan inventory per item untuk seluruh cart
