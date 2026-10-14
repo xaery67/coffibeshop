@@ -89,6 +89,24 @@ export class PaymentService {
       try {
         const result = await provider.initiate(input);
 
+        // Extract provider_order_id from rawResponse (for Midtrans)
+        const providerOrderId = (result.rawResponse as any)?._our_provider_order_id;
+
+        // Save payment intent record for webhook mapping
+        if (providerOrderId) {
+          await prisma.paymentIntent.create({
+            data: {
+              id: randomUUID(),
+              order_id: input.orderId,
+              provider: provider.name,
+              provider_order_id: providerOrderId,
+              method: input.method,
+              idempotency_key: idempotencyKey,
+              status: 'pending',
+            },
+          });
+        }
+
         // Save idempotency record
         if (idempotencyKey) {
           await prisma.paymentIdempotency.create({
@@ -138,6 +156,24 @@ export class PaymentService {
 
     const verification = provider.verifyWebhook(payload, signature);
 
+    // For Midtrans, map provider_order_id back to internal order_id
+    let actualOrderId = verification.orderId;
+    if (providerName === 'midtrans') {
+      // The verification.orderId from Midtrans is actually our provider_order_id
+      // We need to look up the real order_id from payment_intents
+      const intent = await prisma.paymentIntent.findUnique({
+        where: { provider_order_id: verification.orderId },
+      });
+      if (intent) {
+        actualOrderId = intent.order_id;
+        // Update intent status
+        await prisma.paymentIntent.update({
+          where: { id: intent.id },
+          data: { status: 'settled', updated_at: new Date() },
+        });
+      }
+    }
+
     // Idempotent by transaction_id
     const existingPayment = await prisma.payment.findUnique({
       where: { transaction_id: verification.transactionId },
@@ -150,22 +186,22 @@ export class PaymentService {
 
     // Process payment status
     if (verification.success) {
-      await this.processSuccessfulPayment(verification);
+      await this.processSuccessfulPayment(verification, actualOrderId);
     } else {
-      await this.processFailedPayment(verification);
+      await this.processFailedPayment(verification, actualOrderId);
     }
 
     return verification;
   }
 
-  private async processSuccessfulPayment(verification: WebhookVerificationResult) {
+  private async processSuccessfulPayment(verification: WebhookVerificationResult, orderId: string) {
     const order = await prisma.order.findUnique({
-      where: { id: verification.orderId },
+      where: { id: orderId },
       include: { payments: true },
     });
 
     if (!order) {
-      throw NotFound(`Order ${verification.orderId} not found`);
+      throw NotFound(`Order ${orderId} not found`);
     }
 
     // Idempotent: check if already paid
@@ -178,7 +214,7 @@ export class PaymentService {
     await prisma.payment.create({
       data: {
         id: randomUUID(),
-        order_id: verification.orderId,
+        order_id: orderId,
         provider: verification.provider,
         method: verification.method,
         amount: verification.amount,
@@ -215,12 +251,12 @@ export class PaymentService {
     }
   }
 
-  private async processFailedPayment(verification: WebhookVerificationResult) {
+  private async processFailedPayment(verification: WebhookVerificationResult, orderId: string) {
     // Create payment record with failed status
     await prisma.payment.create({
       data: {
         id: randomUUID(),
-        order_id: verification.orderId,
+        order_id: orderId,
         provider: verification.provider,
         method: verification.method,
         amount: verification.amount,
@@ -232,7 +268,7 @@ export class PaymentService {
 
     // Update order if still pending
     const order = await prisma.order.findUnique({
-      where: { id: verification.orderId },
+      where: { id: orderId },
     });
 
     if (order && order.status === 'PENDING') {
