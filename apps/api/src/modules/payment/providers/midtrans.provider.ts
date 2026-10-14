@@ -46,6 +46,20 @@ export class MidtransProvider implements PaymentProvider {
   }
 
   /**
+   * Map internal payment method ke Snap channel Midtrans.
+   * Midtrans Snap memakai channel ID yang BEDA dari enum internal kita.
+   * Empiris live: qris→other_qris, virtual_account→bank_transfer.
+   * Channel lain (gopay, shopeepay, dll) pass-through.
+   */
+  static toSnapChannel(method: string): string {
+    const map: Record<string, string> = {
+      qris: 'other_qris',
+      virtual_account: 'bank_transfer',
+    };
+    return map[method] ?? method;
+  }
+
+  /**
    * Generate unique provider_order_id untuk Midtrans.
    *
    * Midtrans **mengunci `order_id` per transaksi** → tiap percobaan (termasuk
@@ -80,6 +94,9 @@ export class MidtransProvider implements PaymentProvider {
     // Generate unique provider_order_id for this attempt
     const providerOrderId = this.generateProviderOrderId(input);
 
+    // Map internal method ke Snap channel Midtrans
+    const snapChannel = MidtransProvider.toSnapChannel(input.method);
+
     const transactionDetails = {
       order_id: providerOrderId,
       gross_amount: input.amount,
@@ -90,7 +107,7 @@ export class MidtransProvider implements PaymentProvider {
         transaction_details: transactionDetails,
         item_details: itemDetails,
         customer_details: Object.keys(customerDetails).length > 0 ? customerDetails : undefined,
-        enabled_payments: [input.method],
+        enabled_payments: [snapChannel],
         callbacks: {
           finish: input.callbackUrl,
         },

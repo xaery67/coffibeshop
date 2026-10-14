@@ -57,8 +57,8 @@ services:
       LOG_LEVEL: debug
       CORS_ORIGIN: http://localhost:5173
       # Cloud (Supabase/Upstash) dari .env root bila diisi; fallback ke container lokal.
-      DATABASE_URL: ${DATABASE_URL:-postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop}
-      DIRECT_URL: ${DIRECT_URL:-postgresql://coffibeshop:coffibeshop@postgres:5432/coffibeshop}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://coffibeshop:***@postgres:5432/coffibeshop}
+      DIRECT_URL: ${DIRECT_URL:-postgresql://coffibeshop:***@postgres:5432/coffibeshop}
       REDIS_CACHE_URL: ${REDIS_CACHE_URL:-redis://redis:6379}
       REDIS_QUEUE_URL: ${REDIS_QUEUE_URL:-redis://redis:6379}
       JWT_PRIVATE_KEY_PATH: /keys/jwt-private.pem
@@ -72,13 +72,15 @@ services:
       MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-}
       MIDTRANS_CLIENT_KEY: ${MIDTRANS_CLIENT_KEY:-}
       MIDTRANS_IS_PRODUCTION: ${MIDTRANS_IS_PRODUCTION:-false}
-      # ── Supabase (issue #15) — diisi user di .env; kosong = Storage nonaktif ──
+      # Payment methods aktif (komaseparated) — default qris,gopay,shopeepay,virtual_account
+      PAYMENT_METHODS: ${PAYMENT_METHODS:-qris,gopay,shopeepay,virtual_account}
+      # Supabase (issue #15) — diisi user di .env; kosong = Storage nonaktif
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
       SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-cs-dev-products}
-      # ── Queue monitoring (issue #16) ──
+      # Queue monitoring (issue #16)
       QUEUE_ALERT_THRESHOLD: ${QUEUE_ALERT_THRESHOLD:-1000}
       # Business config (dapat di-override lewat .env)
       TAX_RATE: ${TAX_RATE:-0.11}
