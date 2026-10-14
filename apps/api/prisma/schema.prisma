@@ -358,16 +358,17 @@ model Voucher {
 
 model Reward {
   id             String    @id @default(uuid()) @db.Uuid
-  name           String    @unique
-  description    String?
+  name           String    @unique @db.Text
+  description    String?   @db.Text
   points_cost    Int
   discount_amount Decimal  @default(0) @db.Decimal(12, 2)
   min_purchase   Decimal   @default(0) @db.Decimal(12, 2)
   is_active      Boolean   @default(true)
   stock          Int?
-  created_at     DateTime  @default(now())
-  updated_at     DateTime  @updatedAt
+  created_at     DateTime  @default(now()) @db.Timestamp(3)
+  updated_at     DateTime  @updatedAt @db.Timestamp(3)
 
+  @@index([is_active])
   @@map("rewards")
 }
 
