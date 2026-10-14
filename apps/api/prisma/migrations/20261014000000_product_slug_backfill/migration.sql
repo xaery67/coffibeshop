@@ -1,0 +1,3 @@
+-- Migration already applied - slug column exists and is populated
+-- This migration file is kept for historical purposes only
+-- No operations needed as slug column already exists and is populated

@@ -210,14 +210,15 @@ export class CatalogService {
   }
 
   /** GET /catalog/products/:id — detail + varian + opsi. */
-    async product(id: string) {
-      if (!isValidUuid(id)) throw NotFound('Produk tidak ditemukan');
-      const key = CacheKeys.product(id);
+    async product(identifier: string) {
+      // Support both UUID and slug
+      const where = isValidUuid(identifier) ? { id: identifier } : { slug: identifier };
+      const key = CacheKeys.product(identifier);
       const hit = await cacheGet<any>(key);
       if (hit) return hit;
 
       const product = await prisma.product.findUnique({
-        where: { id },
+        where,
         include: {
           category: { select: { id: true, name: true, slug: true } },
           variants: { where: { is_active: true }, orderBy: { sort_order: 'asc' } },
