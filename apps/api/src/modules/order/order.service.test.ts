@@ -87,13 +87,25 @@ vi.mock('../../config/prisma.js', () => {
         return data;
       },
     },
-    loyaltyPoint: {
-      create: async ({ data }: any) => {
-        h.loyalty.push(data);
-        return data;
-      },
-    },
-    product: {
+        loyaltyPoint: {
+          aggregate: async ({ where }: any) => {
+            const rows = h.loyalty.filter((l) => l.user_id === where.user_id && l.type === where.type);
+            return { _sum: { points: rows.reduce((s, r) => s + r.points, 0) } };
+          },
+          findFirst: async ({ where }: any = {}) => {
+            if (!where) return null;
+            return h.loyalty.find((lp) => {
+              if (where.order_id && lp.order_id !== where.order_id) return false;
+              if (where.type && lp.type !== where.type) return false;
+              return true;
+            }) ?? null;
+          },
+          create: async ({ data }: any) => {
+            h.loyalty.push(data);
+            return data;
+          },
+        },
+        product: {
       findMany: async ({ where: _where }: any = {}) => {
         const ids: string[] = _where?.id?.in ?? [];
         return h.products.filter((p) => ids.includes(p.id));
@@ -127,17 +139,31 @@ vi.mock('../../config/prisma.js', () => {
   };
 
   const prisma = {
-    product: {
-      findMany: async ({ where }: any = {}) => {
-        const ids: string[] = where?.id?.in ?? [];
-        return h.products.filter((p) => ids.includes(p.id));
+      product: {
+        findMany: async ({ where }: any = {}) => {
+          const ids: string[] = where?.id?.in ?? [];
+          return h.products.filter((p) => ids.includes(p.id));
+        },
+        findUnique: async ({ where }: any = {}) => {
+          if (!where?.id) return null;
+          return h.products.find((p) => p.id === where.id) ?? null;
+        },
       },
-      findUnique: async ({ where }: any = {}) => {
-        if (!where?.id) return null;
-        return h.products.find((p) => p.id === where.id) ?? null;
+      loyaltyPoint: {
+        findFirst: async ({ where }: any = {}) => {
+          if (!where) return null;
+          return h.loyalty.find((lp) => {
+            if (where.order_id && lp.order_id !== where.order_id) return false;
+            if (where.type && lp.type !== where.type) return false;
+            return true;
+          }) ?? null;
+        },
+        create: async ({ data }: any) => {
+          h.loyalty.push(data);
+          return data;
+        },
       },
-    },
-    order: {
+      order: {
       create: tx.order.create,
       update: tx.order.update,
       findUnique: async ({ where, include }: any) => {
@@ -181,18 +207,12 @@ vi.mock('../../config/prisma.js', () => {
         return rows;
       },
       count: async ({ where }: any = {}) => h.orders.filter((o) => !where?.user_id || o.user_id === where.user_id).length,
-    },
-    orderStatusLog: tx.orderStatusLog,
-    voucher: {
-      findFirst: async ({ where }: any) => h.vouchers.find((v) => v.code === where.code && v.is_active) ?? null,
-    },
-    loyaltyPoint: {
-      aggregate: async ({ where }: any) => {
-        const rows = h.loyalty.filter((l) => l.user_id === where.user_id && l.type === where.type);
-        return { _sum: { points: rows.reduce((s, r) => s + r.points, 0) } };
-      },
-    },
-    productBOM: {
+          },
+          orderStatusLog: tx.orderStatusLog,
+          voucher: {
+            findFirst: async ({ where }: any) => h.vouchers.find((v) => v.code === where.code && v.is_active) ?? null,
+          },
+          productBOM: {
       findMany: async ({ where: _where }: any = {}) => {
         return h.productBOMs
           .filter((bom) => bom.product_id === _where?.product_id)
@@ -213,25 +233,11 @@ vi.mock('../../config/prisma.js', () => {
       },
     },
     outlet: {
-          findUnique: async ({ where: _where }: any = {}) => {
-            return h.outlets.find((o) => o.id === _where.id) ?? null;
-          },
-        },
-        loyaltyPoint: {
-          findFirst: async ({ where }: any = {}) => {
-            if (!where) return null;
-            return h.loyalty.find((lp) => {
-              if (where.order_id && lp.order_id !== where.order_id) return false;
-              if (where.type && lp.type !== where.type) return false;
-              return true;
-            }) ?? null;
-          },
-          create: async ({ data }: any) => {
-            h.loyalty.push(data);
-            return data;
-          },
-        },
-        $transaction: async (fn: any) => fn(tx),
+              findUnique: async ({ where: _where }: any = {}) => {
+                return h.outlets.find((o) => o.id === _where.id) ?? null;
+              },
+            },
+            $transaction: async (fn: any) => fn(tx),
   };
   return { prisma };
 });
@@ -683,6 +689,50 @@ describe('printTicket — kitchen ticket PDF', () => {
     
     const pdfBuffer = await svc.printTicket(o.id, 'owner', 'outlet-1');
     expect(Buffer.isBuffer(pdfBuffer)).toBe(true);
-    expect(pdfBuffer.toString('ascii', 0, 4)).toBe('%PDF');
-  });
-});
+        expect(pdfBuffer.toString('ascii', 0, 4)).toBe('%PDF');
+      });
+    });
+
+    // ═══════════════ loyalty earn on COMPLETED (issue #75) ═══════════════
+
+    describe('loyalty earn on COMPLETED (issue #75)', () => {
+      const POINT_EARN_PER_IDR = 1000; // default from env
+
+      beforeEach(() => {
+        h.loyalty = [];
+      });
+
+      it('COMPLETED → earned + floor(total/POINT_EARN_PER_IDR)', async () => {
+        const o = seedOrder({ status: 'READY', user_id: 'u1', total: 71040, items: [] });
+        await svc.updateStatus(o.id, { status: 'COMPLETED', changed_by: 'staff' });
+        const lp = h.loyalty.find((l) => l.order_id === o.id && l.type === 'earned');
+        expect(lp).toBeDefined();
+        expect(lp!.user_id).toBe('u1');
+        expect(lp!.points).toBe(Math.floor(71040 / POINT_EARN_PER_IDR)); // 71
+      });
+
+      it('COMPLETED 2× → tetap 1 baris (idempotent)', async () => {
+          const o = seedOrder({ status: 'READY', user_id: 'u1', total: 50000, items: [] });
+          await svc.updateStatus(o.id, { status: 'COMPLETED', changed_by: 'staff' });
+          // Second call should throw (invalid transition) but points already awarded
+          await expect(svc.updateStatus(o.id, { status: 'COMPLETED', changed_by: 'staff' })).rejects.toMatchObject({ status: 409 });
+          const earned = h.loyalty.filter((l) => l.order_id === o.id && l.type === 'earned');
+          expect(earned).toHaveLength(1);
+          expect(earned[0].points).toBe(Math.floor(50000 / POINT_EARN_PER_IDR)); // 50
+        });
+
+      it('guest tanpa user_id → tidak error & tanpa poin', async () => {
+        const o = seedOrder({ status: 'READY', user_id: null, total: 50000, items: [] });
+        await svc.updateStatus(o.id, { status: 'COMPLETED', changed_by: 'staff' });
+        const earned = h.loyalty.filter((l) => l.order_id === o.id && l.type === 'earned');
+        expect(earned).toHaveLength(0);
+      });
+
+      it('status lain (CONFIRMED, BEING_PREPARED) → tanpa poin', async () => {
+        const o = seedOrder({ status: 'PAID', user_id: 'u1', total: 50000, items: [] });
+        await svc.updateStatus(o.id, { status: 'CONFIRMED', changed_by: 'staff' });
+        await svc.updateStatus(o.id, { status: 'BEING_PREPARED', changed_by: 'staff' });
+        const earned = h.loyalty.filter((l) => l.order_id === o.id && l.type === 'earned');
+        expect(earned).toHaveLength(0);
+      });
+    });

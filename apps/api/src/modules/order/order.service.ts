@@ -536,13 +536,14 @@ export class OrderService {
             return o;
           });
         } catch (err) {
-          // Trigger inventori melempar check_violation saat stok kurang → petakan ke 409.
-          const msg = (err as Error).message ?? '';
-          if (/Stok .* tidak mencukupi/.test(msg)) {
-            throw Conflict(msg.split('\\n')[0]);
-          }
-          throw err;
-        }
+                  // Trigger inventori melempar check_violation saat stok kurang → petakan ke 409.
+                  const msg = (err as Error).message ?? '';
+                  if (/Stok .* tidak mencukupi/.test(msg)) {
+                    const m = msg.match(/Stok .* tidak mencukupi[^\n"]*/);
+                    throw Conflict(m ? m[0] : 'Stok tidak mencukupi');
+                  }
+                  throw err;
+                }
 
         // Auto-award loyalty points when order reaches COMPLETED (idempotent)
         if (body.status === 'COMPLETED' && order.status !== 'COMPLETED' && order.user_id) {
