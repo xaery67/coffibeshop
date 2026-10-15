@@ -54,14 +54,16 @@ vi.mock('midtrans-client', () => {
     }
   }
   class CoreApi {
-    async getTransactionStatus() {
-      if (coreStatus.error) {
-        const e: any = new Error(coreStatus.error.message);
-        e.statusCode = coreStatus.error.statusCode;
-        throw e;
-      }
-      return coreStatus.value ?? { transaction_status: 'settlement' };
-    }
+    transaction = {
+      status: async () => {
+        if (coreStatus.error) {
+          const e: any = new Error(coreStatus.error.message);
+          e.statusCode = coreStatus.error.statusCode;
+          throw e;
+        }
+        return coreStatus.value ?? { transaction_status: 'settlement' };
+      },
+    };
   }
   return { default: { Snap, CoreApi } };
 });

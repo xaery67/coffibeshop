@@ -192,7 +192,7 @@ export class MidtransProvider implements PaymentProvider {
   async isHealthy(): Promise<boolean> {
     try {
       // Use a dummy transaction ID for health check
-      await this.coreClient.getTransactionStatus('health-check');
+      await this.coreClient.transaction.status('health-check');
       return true;
     } catch {
       return false;
@@ -202,13 +202,13 @@ export class MidtransProvider implements PaymentProvider {
   /**
    * Tarik status transaksi langsung dari Midtrans CoreAPI.
    *
-   * Bila transaksi ditemukan (200), status_code dan gross_amount tersedia;
-   * bila 404 transaksi belum ada → null (tunggu pembayaran).
-   * Dokumentasi Midtrans: GET /v2/{order_id}/status.
+   * `midtrans-client` v1.x tidak mengekspos `getTransactionStatus`; API yang benar
+   * adalah `coreClient.transaction.status(orderId)` (GET /v2/{order_id}/status).
+   * Bila transaksi belum ada Midtrans membalas 404 → null (tunggu pembayaran).
    */
   async fetchTransactionStatus(providerOrderId: string): Promise<WebhookVerificationResult | null> {
     try {
-      const raw = await this.coreClient.getTransactionStatus(providerOrderId);
+      const raw = await this.coreClient.transaction.status(providerOrderId);
       // Midtrans mengembalikan objek berisi order_id, transaction_id, transaction_status, status_code, gross_amount, payment_type.
       if (!raw || typeof raw !== 'object') return null;
 
