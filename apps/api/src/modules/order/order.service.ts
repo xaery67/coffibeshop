@@ -352,7 +352,15 @@ export class OrderService {
   }
 
   async queue(query: any) {
-    const statuses = query.status ? String(query.status).split(',') : ['PAID', 'CONFIRMED'];
+    // Default = SEMUA status aktif (bukan hanya PAID,CONFIRMED).
+    //
+    // Papan antrian punya 4 kolom (Baru·Diproses·Siap·Selesai) dan alurnya
+    // PAID → CONFIRMED → BEING_PREPARED → READY → COMPLETED. Bila default hanya
+    // PAID,CONFIRMED, order HILANG dari papan begitu staff klik "Mulai siapkan"
+    // (BEING_PREPARED) → tak ada aksi lanjutan → customer macet di "Sedang
+    // disiapkan". CANCELLED tetap dikecualikan (tidak relevan di antrian kerja).
+    const ACTIVE_STATUSES = ['PAID', 'CONFIRMED', 'BEING_PREPARED', 'READY', 'COMPLETED'];
+    const statuses = query.status ? String(query.status).split(',') : ACTIVE_STATUSES;
     const outletId = typeof query.outlet_id === 'string' ? query.outlet_id : undefined;
     return prisma.order.findMany({
       where: {

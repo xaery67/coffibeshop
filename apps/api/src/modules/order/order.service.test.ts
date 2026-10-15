@@ -665,12 +665,21 @@ describe('history & queue', () => {
     expect(r.meta.total).toBe(2);
   });
 
-  it('queue default status PAID,CONFIRMED', async () => {
+  it('queue default memuat SEMUA status aktif (alur 4 kolom lengkap)', async () => {
     seedOrder({ status: 'PAID' });
     seedOrder({ status: 'CONFIRMED' });
-    seedOrder({ status: 'PENDING' });
+    seedOrder({ status: 'BEING_PREPARED' });
+    seedOrder({ status: 'READY' });
+    seedOrder({ status: 'COMPLETED' });
+    seedOrder({ status: 'PENDING' });     // belum dibayar → di luar antrian
+    seedOrder({ status: 'CANCELLED' });   // batal → di luar antrian
     const r = await svc.queue({});
-    expect(r).toHaveLength(2);
+    // REGRESI: dulu default hanya PAID,CONFIRMED → order hilang begitu
+    // BEING_PREPARED/READY, sehingga tak ada aksi lanjutan di papan.
+    expect(r).toHaveLength(5);
+    expect(r.map((o: any) => o.status).sort()).toEqual(
+      ['BEING_PREPARED', 'COMPLETED', 'CONFIRMED', 'PAID', 'READY'],
+    );
   });
 
   it('queue menerima filter status eksplisit', async () => {
