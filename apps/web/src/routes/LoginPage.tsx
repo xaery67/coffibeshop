@@ -138,6 +138,16 @@ export function LoginPage() {
           </form>
 
           <p className="text-center text-sm">
+            Belum punya akun?{' '}
+            <Link
+              to={next ? `/register?next=${encodeURIComponent(next)}` : '/register'}
+              className="rounded text-brand underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+            >
+              Daftar
+            </Link>
+          </p>
+
+          <p className="text-center text-sm">
             <Link
               to="/"
               className="rounded text-brand underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"

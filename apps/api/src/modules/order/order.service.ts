@@ -118,7 +118,28 @@ export class OrderService {
 
       // Normalisasi items untuk memastikan field konsisten
       const normalizedItems = items.map(normalizeCartItemInput);
-    
+
+      // Resolusi outlet (WAJIB agar order muncul di dashboard admin / antrian outlet).
+      // Guest memilih outlet saat checkout; staff memakai outlet miliknya bila tak dikirim.
+      // Sebelumnya order dibuat dengan outlet_id=null → `GET /orders/queue?outlet_id=` kosong.
+      let outletId: string | null = null;
+      const requestedOutlet =
+        typeof input.outlet_id === 'string' && input.outlet_id.trim() ? input.outlet_id.trim() : null;
+      if (requestedOutlet) {
+        const outlet = await prisma.outlet.findUnique({
+          where: { id: requestedOutlet },
+          select: { id: true, is_active: true },
+        });
+        if (!outlet) throw BadRequest('Outlet tidak ditemukan');
+        if (!outlet.is_active) throw BadRequest('Outlet tidak aktif');
+        outletId = outlet.id;
+      } else if (userId) {
+        // Staff/member dengan outlet ter-scope: pakai outlet miliknya.
+        const u = await prisma.user.findUnique({ where: { id: userId }, select: { outlet_id: true } });
+        if (u?.outlet_id) outletId = u.outlet_id;
+      }
+      if (!outletId) throw BadRequest('outlet_id wajib diisi untuk membuat pesanan');
+
       // Baca meta cart (voucher, points)
       const meta = await readCartMeta(key);
       const discount = meta?.discount ?? 0;
@@ -197,6 +218,7 @@ export class OrderService {
           data: {
             order_number,
             user_id: userId ?? null,
+            outlet_id: outletId,
             status: 'PENDING',
             total: priced.total,
             subtotal: priced.subtotal,

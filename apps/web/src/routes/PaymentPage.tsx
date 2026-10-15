@@ -5,7 +5,7 @@ import { useConfig } from '../hooks/useConfig.js';
 import { useOrderTracking } from '../hooks/useOrderTracking.js';
 import { formatIDR } from '../lib/pricing.js';
 import { paymentLabel, paymentUiStatus, type PaymentUiStatus } from '../lib/checkout.js';
-import { postInitiatePayment, type InitiatePaymentResult } from '../lib/orders.js';
+import { postInitiatePayment, postVerifyPayment, type InitiatePaymentResult } from '../lib/orders.js';
 import { Button, buttonClasses } from '../components/ui/Button.js';
 import { Chip, ChipGroup } from '../components/ui/Chip.js';
 import { Badge } from '../components/ui/Badge.js';
@@ -44,6 +44,7 @@ export function PaymentPage() {
     const [result, setResult] = useState<InitiatePaymentResult | null>(null);
     const [copied, setCopied] = useState(false);
     const [toast, setToast] = useState<string | null>(null);
+    const [checking, setChecking] = useState(false);
     const attempt = useRef(0);
 
     // Normalisasi: empty string → undefined agar backend tidak kirim field kosong ke Midtrans
@@ -103,6 +104,44 @@ export function PaymentPage() {
       setToast('Gagal menyalin. Salin manual dari layar.');
     }
   };
+
+  /**
+   * Aksi lanjutan pasca-bayar: tarik status dari gateway.
+   *
+   * Webhook tidak selalu sampai (mis. dev tanpa tunnel publik) sehingga status
+   * di layar bisa "macet" di Menunggu pembayaran walau pembayaran sudah sukses.
+   * Bila gateway bilang settled → order jadi PAID → pesanan masuk antrian admin.
+   */
+  const checkStatus = useCallback(
+    async (opts: { silent?: boolean } = {}) => {
+      if (!orderId) return;
+      if (!opts.silent) setChecking(true);
+      try {
+        const res = await postVerifyPayment(orderId);
+        if (res.status === 'paid') {
+          setToast('Pembayaran terkonfirmasi! Pesanan masuk ke dapur.');
+        } else if (!opts.silent) {
+          setToast(
+            res.status === 'failed'
+              ? 'Pembayaran gagal / kedaluwarsa. Coba lagi atau ganti metode.'
+              : 'Pembayaran belum terdeteksi. Selesaikan di halaman pembayaran.',
+          );
+        }
+      } catch (e) {
+        if (!opts.silent) setToast((e as Error).message || 'Gagal memeriksa status.');
+      } finally {
+        if (!opts.silent) setChecking(false);
+      }
+    },
+    [orderId],
+  );
+
+  // Auto-cek berkala selama masih pending (webhook bisa tidak sampai).
+  useEffect(() => {
+    if (uiStatus !== 'pending' || !orderId) return;
+    const t = setInterval(() => void checkStatus({ silent: true }), 8000);
+    return () => clearInterval(t);
+  }, [uiStatus, orderId, checkStatus]);
 
   if (!info.amount && !info.trackingToken) {
     return (
@@ -217,6 +256,19 @@ export function PaymentPage() {
               </div>
               <p className="text-caption text-text-muted">
                 Setelah membayar, status di halaman ini akan diperbarui otomatis.
+              </p>
+              <Button
+                variant="secondary"
+                size="lg"
+                block
+                loading={checking}
+                onClick={() => void checkStatus()}
+              >
+                Cek status pembayaran
+              </Button>
+              <p className="text-caption text-text-muted">
+                Sudah bayar tapi status belum berubah? Tekan tombol di atas untuk memeriksa ke
+                penyedia pembayaran.
               </p>
             </div>
           )}

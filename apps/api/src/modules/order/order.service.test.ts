@@ -237,6 +237,12 @@ vi.mock('../../config/prisma.js', () => {
                 return h.outlets.find((o) => o.id === _where.id) ?? null;
               },
             },
+            user: {
+              findUnique: async ({ where }: any = {}) => {
+                if (!where?.id) return null;
+                return { id: where.id, outlet_id: 'outlet-1' };
+              },
+            },
             $transaction: async (fn: any) => fn(tx),
   };
   return { prisma };

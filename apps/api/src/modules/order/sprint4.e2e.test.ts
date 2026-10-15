@@ -120,7 +120,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     const svc = new OrderService();
     const guestId = `guest-s4-${Date.now()}`;
     await svc.addItem(undefined, guestId, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const res = await svc.checkout(undefined, guestId, { fulfillment_type: 'pickup', payment_method: 'qris' });
+    const res = await svc.checkout(undefined, guestId, { fulfillment_type: 'pickup', payment_method: 'qris', outlet_id: outletId });
     expect(res.status).toBe('PENDING');
     expect(res.tracking_token).toBeTruthy();
 
@@ -145,7 +145,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 2 });
     // Tukar 100 poin → diskon 100 (POINT_VALUE=1).
     await svc.applyVoucher(userId, undefined, { points_to_redeem: 100 });
-    const res = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', payment_method: 'qris' });
+    const res = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', payment_method: 'qris', outlet_id: outletId });
     expect(res.status).toBe('PENDING');
 
     const order = await prisma.order.findUnique({ where: { id: res.order_id } });
@@ -173,7 +173,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     const svc = new OrderService();
     const userId = await seedUser('member');
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
 
     for (const status of ['PAID', 'CONFIRMED', 'BEING_PREPARED', 'READY', 'COMPLETED']) {
       await svc.updateStatus(order_id, { status, changed_by: userId });
@@ -190,7 +190,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     const svc = new OrderService();
     const userId = await seedUser('member');
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
     await svc.updateStatus(order_id, { status: 'PAID' });
     await svc.updateStatus(order_id, { status: 'CONFIRMED' });
     await expect(svc.updateStatus(order_id, { status: 'COMPLETED' })).rejects.toMatchObject({ status: 409 });
@@ -203,7 +203,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     await prisma.inventoryItem.update({ where: { id: invItemId }, data: { quantity: 10 } });
 
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
     await svc.updateStatus(order_id, { status: 'PAID' });
     await svc.updateStatus(order_id, { status: 'CONFIRMED' });
 
@@ -223,7 +223,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     await prisma.inventoryItem.update({ where: { id: invItemId }, data: { quantity: 0.05 } });
 
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
     await svc.updateStatus(order_id, { status: 'PAID' });
 
     await expect(svc.updateStatus(order_id, { status: 'CONFIRMED' })).rejects.toMatchObject({ status: 409 });
@@ -245,7 +245,7 @@ describe.skipIf(!run)('E2E Sprint 4 — guest/member/staff happy path (Postgres 
     const userId = await seedUser('member');
 
     await svc.addItem(userId, undefined, { product_id: productId, variant_id: variantLargeId, quantity: 1 });
-    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    const { order_id } = await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
     for (const s of ['PAID', 'CONFIRMED', 'BEING_PREPARED', 'READY', 'COMPLETED']) {
       await svc.updateStatus(order_id, { status: s });
     }

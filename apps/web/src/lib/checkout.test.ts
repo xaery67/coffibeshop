@@ -111,14 +111,22 @@ describe('checkout — payload & catatan', () => {
     expect(composeNotes(initialDraft('pickup'))).toBeUndefined();
   });
 
-  it('buildCheckoutPayload memakai fulfillment & metode', () => {
+  it('buildCheckoutPayload memakai fulfillment, metode, & outlet_id', () => {
     const d = initialDraft('pickup');
     d.paymentMethod = 'gopay' as never;
+    d.outletId = 'outlet-1';
     expect(buildCheckoutPayload(d)).toEqual({
       fulfillment_type: 'pickup',
       payment_method: 'gopay',
+      outlet_id: 'outlet-1',
       notes: undefined,
     });
+  });
+
+  it('buildCheckoutPayload tanpa outlet → throw (order tanpa outlet tak masuk antrian)', () => {
+    const d = initialDraft('pickup');
+    d.paymentMethod = 'gopay' as never;
+    expect(() => buildCheckoutPayload(d)).toThrow(/outlet/i);
   });
 
   it('buildCheckoutPayload tanpa metode → throw', () => {

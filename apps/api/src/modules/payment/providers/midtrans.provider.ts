@@ -198,6 +198,50 @@ export class MidtransProvider implements PaymentProvider {
       return false;
     }
   }
+
+  /**
+   * Tarik status transaksi langsung dari Midtrans CoreAPI.
+   *
+   * Bila transaksi ditemukan (200), status_code dan gross_amount tersedia;
+   * bila 404 transaksi belum ada → null (tunggu pembayaran).
+   * Dokumentasi Midtrans: GET /v2/{order_id}/status.
+   */
+  async fetchTransactionStatus(providerOrderId: string): Promise<WebhookVerificationResult | null> {
+    try {
+      const raw = await this.coreClient.getTransactionStatus(providerOrderId);
+      // Midtrans mengembalikan objek berisi order_id, transaction_id, transaction_status, status_code, gross_amount, payment_type.
+      if (!raw || typeof raw !== 'object') return null;
+
+      const payload: Record<string, unknown> = {
+        order_id: raw.order_id ?? providerOrderId,
+        transaction_id: raw.transaction_id,
+        transaction_status: raw.transaction_status,
+        status_code: raw.status_code,
+        gross_amount: raw.gross_amount,
+        payment_type: raw.payment_type,
+      };
+      // Midtrans CORE status notification TIDAK mengirim signature_key; bypass verifyWebhook.
+      const status = String(raw.transaction_status ?? '');
+      const success = status === 'settlement' || status === 'capture';
+      return {
+        success,
+        transactionId: String(raw.transaction_id ?? ''),
+        orderId: providerOrderId,
+        status: (success ? 'settlement' : status) as WebhookVerificationResult['status'],
+        amount: Number(raw.gross_amount ?? 0),
+        provider: this.name,
+        method: String(raw.payment_type ?? ''),
+        rawPayload: payload,
+      };
+    } catch (error: any) {
+      const statusCode = error?.statusCode ?? error?.httpStatusCode ?? 0;
+      // 404 = order_id belum dikenali (belum ada transaksi); bukan error.
+      if (statusCode === 404 || statusCode === '404' || /not found/i.test(error?.message ?? '')) {
+        return null;
+      }
+      throw BadRequest(`Midtrans status check failed: ${error?.message ?? 'Unknown error'}`);
+    }
+  }
 }
 
 export async function createMidtransProvider(): Promise<PaymentProvider> {

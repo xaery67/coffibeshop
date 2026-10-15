@@ -134,6 +134,7 @@ describe.skipIf(!run)('E2E cart → checkout (Postgres nyata)', () => {
     const result = await svc.checkout(userId, undefined, {
       fulfillment_type: 'pickup',
       payment_method: 'qris',
+      outlet_id: outletId,
     });
     expect(result.status).toBe('PENDING');
     expect(result.tracking_token).toBeTruthy();
@@ -157,7 +158,7 @@ describe.skipIf(!run)('E2E cart → checkout (Postgres nyata)', () => {
     const svc = new OrderService();
     const userId = await seedUser(2);
     await svc.addItem(userId, undefined, { product_id: productId, option_ids: [], quantity: 1 });
-    await svc.checkout(userId, undefined, { fulfillment_type: 'pickup' });
+    await svc.checkout(userId, undefined, { fulfillment_type: 'pickup', outlet_id: outletId });
     const after = await svc.getCart(userId);
     expect(after.items).toHaveLength(0);
   });
@@ -166,7 +167,7 @@ describe.skipIf(!run)('E2E cart → checkout (Postgres nyata)', () => {
     const svc = new OrderService();
     const userId = await seedUser(3);
     await svc.addItem(userId, undefined, { product_id: productId, option_ids: [], quantity: 1 });
-    const result = await svc.checkout(userId, undefined, { fulfillment_type: 'delivery' });
+    const result = await svc.checkout(userId, undefined, { fulfillment_type: 'delivery', outlet_id: outletId });
     const order = await prisma.order.findUnique({ where: { id: result.order_id } });
     expect(Number(order.shipping_fee)).toBe(10000);
   });

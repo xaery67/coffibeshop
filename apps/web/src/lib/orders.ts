@@ -6,6 +6,8 @@ import { apiFetch } from './api.js';
 export interface CheckoutPayload {
   fulfillment_type: string;
   payment_method: PaymentMethod | string;
+  /** Outlet pemenuhan — WAJIB agar order masuk antrian outlet (bug dashboard kosong). */
+  outlet_id?: string;
   notes?: string;
 }
 
@@ -110,4 +112,22 @@ export interface TrackResult {
 
 export function getTrackByToken(token: string): Promise<TrackResult> {
   return apiFetch<TrackResult>(`/orders/track/${token}`);
+}
+
+/** Respons `POST /payments/:orderId/verify` (aksi lanjutan pasca-bayar). */
+export interface VerifyPaymentResult {
+  order_id: string;
+  status: 'paid' | 'pending' | 'failed' | 'unknown';
+  provider: string | null;
+  order_status: string;
+}
+
+/**
+ * POST /payments/:orderId/verify — tarik status pembayaran LANGSUNG dari gateway.
+ *
+ * Menyusul webhook yang tidak sampai (mis. dev tanpa tunnel publik): bila gateway
+ * melaporkan settlement/capture, order ditandai `PAID` → muncul di antrian admin.
+ */
+export function postVerifyPayment(orderId: string): Promise<VerifyPaymentResult> {
+  return apiFetch<VerifyPaymentResult>(`/payments/${orderId}/verify`, { method: 'POST' });
 }
