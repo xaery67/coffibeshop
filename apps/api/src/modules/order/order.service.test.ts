@@ -56,6 +56,11 @@ vi.mock('../../config/redis.js', () => ({
 
 vi.mock('./sse.controller.js', () => ({
   publishOrderEvent: (key: string, payload: any) => void h.events.push({ key, payload }),
+  // publishOrderStatus = siaran ke order_id + tracking_token (fix UI tak update).
+  publishOrderStatus: (order: any, payload: any) => {
+    h.events.push({ key: order.id, payload });
+    if (order.tracking_token) h.events.push({ key: order.tracking_token, payload });
+  },
   streamOrderEvents: () => undefined,
 }));
 
@@ -531,6 +536,28 @@ describe('updateStatus — state machine kanonik', () => {
     await svc.updateStatus(o.id, { status: 'PAID' });
     expect(h.events.length).toBeGreaterThanOrEqual(1);
     expect(h.events.some(e => e.payload?.status === 'PAID')).toBe(true);
+  });
+
+  /**
+   * REGRESI (bug "UI tidak ter-update setelah pembayaran"):
+   * PaymentPage guest berlangganan SSE dengan key = tracking_token, jadi event
+   * HARUS disiarkan ke order_id DAN tracking_token. Dulu hanya order_id →
+   * halaman pembayaran macet "Menunggu pembayaran" walau order sudah PAID.
+   */
+  it('publish event ke order_id DAN tracking_token (UI guest ikut ter-update)', async () => {
+    const o = seedOrder({ status: 'PENDING', tracking_token: 'tok-xyz' });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    const keys = h.events.filter(e => e.payload?.status === 'PAID').map(e => e.key);
+    expect(keys).toContain(o.id);
+    expect(keys).toContain('tok-xyz');
+  });
+
+  it('order tanpa tracking_token tetap aman (hanya order_id)', async () => {
+    const o = seedOrder({ status: 'PENDING', tracking_token: null });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    const keys = h.events.filter(e => e.payload?.status === 'PAID').map(e => e.key);
+    expect(keys).toContain(o.id);
+    expect(keys).not.toContain(null);
   });
 });
 

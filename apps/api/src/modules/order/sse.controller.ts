@@ -22,6 +22,23 @@ export function publishOrderEvent(orderKey: string, payload: Record<string, unkn
   for (const c of set) c.res.write(data);
 }
 
+/**
+ * Publish ke SEMUA key yang mungkin di-subscribe klien.
+ *
+ * Klien guest (`PaymentPage`/`TrackPage`) membuka `/orders/track/{tracking_token}/events`
+ * → terdaftar dengan key = **tracking_token**. Klien member membuka `/orders/{id}/events`
+ * → key = **order_id**. Mengirim hanya ke `order_id` membuat stream guest tak pernah
+ * menerima `status_change` (gejala: UI macet "Menunggu pembayaran" walau sudah dibayar),
+ * jadi kita siarkan ke keduanya.
+ */
+export function publishOrderStatus(
+  order: { id: string; tracking_token?: string | null },
+  payload: Record<string, unknown>,
+): void {
+  publishOrderEvent(order.id, payload);
+  if (order.tracking_token) publishOrderEvent(order.tracking_token, payload);
+}
+
 export function streamOrderEvents(req: Request, res: Response): void {
   const orderKey = (req.params.token as string) || (req.params.id as string) || 'unknown';
 

@@ -51,7 +51,8 @@ export function PaymentPage() {
     const normalize = (v: string | undefined) => (v?.trim() ? v.trim() : undefined);
 
     const tracking = useOrderTracking(info.trackingToken);
-  const uiStatus: PaymentUiStatus = paymentUiStatus(tracking.status);
+    const { refresh } = tracking;
+    const uiStatus: PaymentUiStatus = paymentUiStatus(tracking.status);
 
   const initiate = useCallback(
     async (m: PaymentMethod) => {
@@ -118,6 +119,9 @@ export function PaymentPage() {
       if (!opts.silent) setChecking(true);
       try {
         const res = await postVerifyPayment(orderId);
+        // Muat ulang status agar UI benar-benar berubah (bukan sekadar toast).
+        // Tanpa ini, walau order sudah PAID, layar tetap "Menunggu pembayaran".
+        await refresh();
         if (res.status === 'paid') {
           setToast('Pembayaran terkonfirmasi! Pesanan masuk ke dapur.');
         } else if (!opts.silent) {
@@ -133,7 +137,7 @@ export function PaymentPage() {
         if (!opts.silent) setChecking(false);
       }
     },
-    [orderId],
+    [orderId, refresh],
   );
 
   // Auto-cek berkala selama masih pending (webhook bisa tidak sampai).

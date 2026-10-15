@@ -4,7 +4,7 @@ import { redisCache, redisPubSub } from '../../config/redis.js';
 import { env } from '../../config/env.js';
 import { BadRequest, NotFound, Forbidden, Conflict } from '../../lib/http.js';
 import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart, normalizeCartItemInput, readCartMeta, writeCartMeta, clearCartMeta } from './cart.service.js';
-import { publishOrderEvent } from './sse.controller.js';
+import { publishOrderEvent, publishOrderStatus } from './sse.controller.js';
 import PDFDocument from 'pdfkit';
 
 export class OrderService {
@@ -512,7 +512,7 @@ export class OrderService {
                                             timestamp: new Date().toISOString(),
                                           }));
 
-              publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
+              publishOrderStatus(order, { status: 'CANCELLED', timestamp: new Date().toISOString() });
               return updated;
             }
 
@@ -593,7 +593,7 @@ export class OrderService {
       }),
     );
 
-    publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
+    publishOrderStatus(order, { status: body.status, timestamp: new Date().toISOString() });
         return updated;
           }
 

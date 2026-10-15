@@ -28,6 +28,7 @@ vi.mock('../../config/redis.js', () => ({
 }));
 vi.mock('./sse.controller.js', () => ({
   publishOrderEvent: () => undefined,
+  publishOrderStatus: () => undefined,
   streamOrderEvents: () => undefined,
 }));
 

@@ -5,7 +5,7 @@ import { AppError, Conflict, NotFound, InternalServerError } from '../../lib/htt
 import { createMidtransProvider } from './providers/midtrans.provider.js';
 import { createXenditProvider } from './providers/xendit.provider.js';
 import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult, WebhookVerificationResult } from './providers/payment-provider.interface.js';
-import { publishOrderEvent } from '../order/sse.controller.js';
+import { publishOrderEvent, publishOrderStatus } from '../order/sse.controller.js';
 
 export class PaymentService {
   private providers: Map<string, PaymentProvider> = new Map();
@@ -301,7 +301,7 @@ export class PaymentService {
       });
 
       // Emit event for notification (async, no worker yet)
-      publishOrderEvent(order.id, {
+      publishOrderStatus(order, {
         status: 'PAID',
         timestamp: new Date().toISOString(),
       });
