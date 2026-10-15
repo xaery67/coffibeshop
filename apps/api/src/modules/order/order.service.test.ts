@@ -441,6 +441,20 @@ describe('checkout', () => {
     await expect(svc.checkout('u1', undefined, { fulfillment_type: 'pickup' })).rejects.toMatchObject({ status: 409 });
   });
 
+  it('pesan 409 actionable: sebutkan item & alasannya (bukan sekadar "ada item tidak tersedia")', async () => {
+    h.products = [{ ...LATTE, is_available: false }];
+    await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', option_ids: [], qty: 1 }]);
+    try {
+      await svc.checkout('u1', undefined, { fulfillment_type: 'pickup' });
+      throw new Error('seharusnya melempar 409');
+    } catch (e: any) {
+      expect(e.status).toBe(409);
+      expect(e.message).toMatch(/Latte/); // nama produk
+      expect(e.message).toMatch(/tidak tersedia/i); // alasan
+      expect(e.message).toMatch(/hapus item/i); // arahan tindakan
+    }
+  });
+
   it('menerapkan meta diskon voucher dari Redis', async () => {
     await writeCart(memberKey('u1'), [{ id: 'i1', product_id: 'p-latte', variant_id: 'v-lrg', option_ids: ['shot-yes'], qty: 2 }]);
     await writeCartMeta(memberKey('u1'), { voucher_code: 'WELCOME10', discount: 10000, points_to_redeem: 0, points_discount: 0 });

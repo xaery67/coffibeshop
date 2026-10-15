@@ -181,6 +181,33 @@ describe('priceCart — pricing server-side (golden)', () => {
     expect(r.items[0].unavailable_reason).toMatch(/opsi tidak valid/i);
   });
 
+  // REGRESI BUG CHECKOUT: dua baris cart dengan product_id SAMA. Baris pertama
+  // unavailable tidak boleh menyeret baris kedua yang VALID (dulu bug: `continue`
+  // memakai `priced[priced.length - 1]` global → checkout gagal 409
+  // "Ada item yang tidak tersedia" padahal ada item valid).
+  it('REGRESI: baris 1 opsi invalid, baris 2 (produk sama) valid → baris 2 tetap dihitung', async () => {
+    const r = await priceCart([
+      { product_id: 'p-latte', variant_id: 'v-reg', option_ids: ['opsi-produk-lain'], qty: 1 },
+      { product_id: 'p-latte', variant_id: 'v-reg', option_ids: ['shot-yes'], qty: 1 },
+    ]);
+    expect(r.items).toHaveLength(2);
+    expect(r.items[0].unavailable).toBe(true);
+    expect(r.items[1].unavailable).toBe(false);
+    expect(r.items[1].unit_price).toBe(32000); // 27.000 + 5.000 (Extra Shot)
+    expect(r.subtotal).toBe(32000);
+  });
+
+  it('REGRESI: baris 1 varian habis, baris 2 (produk sama) varian tersedia → baris 2 dihitung', async () => {
+    const r = await priceCart([
+      { product_id: 'p-latte', variant_id: 'v-habis', option_ids: [], qty: 1 },
+      { product_id: 'p-latte', variant_id: 'v-lrg', option_ids: [], qty: 1 },
+    ]);
+    expect(r.items[0].unavailable).toBe(true);
+    expect(r.items[1].unavailable).toBe(false);
+    expect(r.items[1].unit_price).toBe(32000); // 27.000 + 5.000 (Large)
+    expect(r.subtotal).toBe(32000);
+  });
+
   it('diskon voucher mengurangi taxable sebelum pajak', async () => {
     const r = await priceCart([{ product_id: 'p-latte', variant_id: 'v-lrg', option_ids: ['shot-yes'], qty: 2 }], {
       discount: 10000,
