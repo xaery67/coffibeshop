@@ -4,7 +4,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vites
  * RBAC MATRIX — endpoint baru Sprint 4 (issue #55, §4.11).
  *
  * Cakupan:
- *   - `/reports/*`   → requireMinRole('kasir') / ('manager' untuk export)
+ *   - `/reports/*`   → laporan keuangan owner/manager/finance; KPI minimal kasir
  *   - `/inventory/*` → requireMinRole('kasir') / ('manager' untuk POST)
  *   - `PUT /orders/:id/status` → requireRole(staff) — customer/member HARUS ditolak
  *   - WS auth → role non-staff ditolak (lihat juga ws.controller.test.ts)
@@ -88,12 +88,14 @@ const AUTH = { Authorization: 'Bearer test-token' };
 
 /** Daftar endpoint Sprint 4 + role minimal yang diwajibkan. */
 const ENDPOINTS: { method: string; path: string; allowed: string[]; denied: string[] }[] = [
-  // ── Reporting: minimal kasir (kecuali export → manager) ──
-  { method: 'GET', path: '/api/v1/reports/daily', allowed: ['owner', 'manager', 'finance', 'kasir'], denied: ['barista', 'member', 'guest'] },
+  // ── Reporting ──
+  // Laporan keuangan detail: owner/manager/finance SAJA (kasir/barista ditolak,
+  // selaras ADMIN-WEB.md §RBAC). KPI dikecualikan: dipakai dashboard semua staf.
+  { method: 'GET', path: '/api/v1/reports/daily', allowed: ['owner', 'manager', 'finance'], denied: ['kasir', 'barista', 'member', 'guest'] },
   { method: 'GET', path: '/api/v1/reports/kpi', allowed: ['owner', 'manager', 'finance', 'kasir'], denied: ['barista', 'member', 'guest'] },
-  { method: 'GET', path: '/api/v1/reports/top-products', allowed: ['owner', 'manager', 'finance', 'kasir'], denied: ['barista', 'member', 'guest'] },
-  { method: 'GET', path: '/api/v1/reports/monthly', allowed: ['owner', 'manager', 'finance', 'kasir'], denied: ['barista', 'member', 'guest'] },
-  { method: 'GET', path: '/api/v1/reports/export/accounting', allowed: ['owner', 'manager'], denied: ['finance', 'kasir', 'barista', 'member', 'guest'] },
+  { method: 'GET', path: '/api/v1/reports/top-products', allowed: ['owner', 'manager', 'finance'], denied: ['kasir', 'barista', 'member', 'guest'] },
+  { method: 'GET', path: '/api/v1/reports/monthly', allowed: ['owner', 'manager', 'finance'], denied: ['kasir', 'barista', 'member', 'guest'] },
+  { method: 'GET', path: '/api/v1/reports/export/accounting', allowed: ['owner', 'manager', 'finance'], denied: ['kasir', 'barista', 'member', 'guest'] },
 
   // ── Inventory: baca minimal kasir; tulis minimal manager ──
   { method: 'GET', path: '/api/v1/inventory', allowed: ['owner', 'manager', 'finance', 'kasir'], denied: ['barista', 'member', 'guest'] },

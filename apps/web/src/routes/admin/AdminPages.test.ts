@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AdminDashboardPage } from './AdminDashboardPage.js';
 import { ReportsPage } from './ReportsPage.js';
 import { OutletCtx } from '../../components/admin/AdminShell.js';
+import { setSession } from '../../hooks/useAuth.js';
 import { render, h, waitFor } from '../../test/render.js';
 
 /**
@@ -87,6 +88,9 @@ function payloadFor(url: string): unknown {
 
 beforeEach(() => {
   localStorage.clear();
+  // Dashboard menampilkan grafik/top-produk hanya untuk role ber-laporan;
+  // set sesi owner agar seksi tersebut dirender pada test.
+  setSession('test-token', { id: 'u1', email: 'owner@coffibeshop.id', full_name: 'Owner', role: 'owner', outlet_id: 'o1' });
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: unknown) => {
@@ -113,6 +117,19 @@ describe('AdminDashboardPage', () => {
     await waitFor(() => expect(r.$('[data-testid="sales-chart"]')).not.toBeNull());
     expect(r.$('[data-testid="top-products-table"]')).not.toBeNull();
     expect(r.text()).toContain('Latte');
+    r.unmount();
+  });
+
+  it('kasir: KPI tetap tampil, tapi grafik & top-produk disembunyikan (RBAC)', async () => {
+    setSession('test-token', { id: 'u2', email: 'kasir@coffibeshop.id', full_name: 'Kasir', role: 'kasir', outlet_id: 'o1' });
+    const r = render(wrap(h(AdminDashboardPage, null)));
+    // KPI (dashboard semua staf) tetap muncul.
+    await waitFor(() => expect(r.$$('[data-testid="kpi-card"]').length).toBe(4));
+    // Data keuangan detail tidak dirender untuk kasir.
+    expect(r.$('[data-testid="sales-chart"]')).toBeNull();
+    expect(r.$('[data-testid="top-products-table"]')).toBeNull();
+    expect(r.text()).not.toContain('Tren penjualan');
+    expect(r.text()).not.toContain('Produk terlaris');
     r.unmount();
   });
 });
