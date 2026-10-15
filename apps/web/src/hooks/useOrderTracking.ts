@@ -160,6 +160,11 @@ export function useOrderTracking(
       }
       try {
         setState((s) => ({ ...s, mode: 'sse' }));
+        // Ambil status AWAL sekarang juga. Tanpa ini halaman guest yang dibuka
+        // SETELAH order dibuat (kasus normal) tak pernah tahu status terkini —
+        // `status_change` hanya datang saat status BERUBAH, jadi UI macet di
+        // "Memuat status pesanan…" sampai ada perubahan status.
+        void pollOnce();
         es = new EventSource(`${API_BASE}/orders/track/${token}/events`);
         es.addEventListener('status_change', (e) => {
           try {
