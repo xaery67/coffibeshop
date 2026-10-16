@@ -54,10 +54,10 @@ catalogRouter.get(
   asyncHandler(async (req, res) => sendOk(res, await service.menu(req.params.outletId))),
 );
 
-/** GET /api/v1/catalog/products/:id — detail + varian + opsi. */
+/** GET /api/v1/catalog/products/:identifier — detail + varian + opsi. */
 catalogRouter.get(
-  '/products/:id',
-  asyncHandler(async (req, res) => sendOk(res, await service.product(req.params.id))),
+  '/products/:identifier',
+  asyncHandler(async (req, res) => sendOk(res, await service.product(req.params.identifier))),
 );
 
 // ───────────────────────── ADMIN (tulis) ─────────────────────────

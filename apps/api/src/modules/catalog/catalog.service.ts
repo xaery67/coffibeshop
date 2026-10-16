@@ -210,14 +210,24 @@ export class CatalogService {
   }
 
   /** GET /catalog/products/:id — detail + varian + opsi. */
-    async product(id: string) {
-      if (!isValidUuid(id)) throw NotFound('Produk tidak ditemukan');
-      const key = CacheKeys.product(id);
-      const hit = await cacheGet<any>(key);
+    async product(identifier: string) {
+      // Support both UUID and slug
+      const where = isValidUuid(identifier) ? { id: identifier } : { slug: identifier };
+    
+      // First, resolve to ID for cache consistency
+      let product = await prisma.product.findUnique({
+        where,
+        select: { id: true, is_active: true },
+      });
+      if (!product || !product.is_active) throw NotFound('Produk tidak ditemukan');
+    
+      const cacheKey = CacheKeys.product(product.id);
+      const hit = await cacheGet<any>(cacheKey);
       if (hit) return hit;
 
-      const product = await prisma.product.findUnique({
-        where: { id },
+      // Full fetch with relations
+      product = await prisma.product.findUnique({
+        where: { id: product.id },
         include: {
           category: { select: { id: true, name: true, slug: true } },
           variants: { where: { is_active: true }, orderBy: { sort_order: 'asc' } },
@@ -231,7 +241,7 @@ export class CatalogService {
       if (!product || !product.is_active) throw NotFound('Produk tidak ditemukan');
 
       const data = serializeProduct(product);
-      await cacheSet(key, data, TTL.PRODUCT);
+      await cacheSet(cacheKey, data, TTL.PRODUCT);
       return data;
     }
 

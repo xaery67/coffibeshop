@@ -49,8 +49,12 @@ vi.mock('../../config/prisma.js', () => {
         if (where?.id?.in) rows = rows.filter((p) => where.id.in.includes(p.id));
         return rows.slice(skip, skip + take).map(productInclude);
       },
-      findUnique: async ({ where }: any) =>
-        h.products.find((p) => p.id === where.id) ?? null,
+      findUnique: async ({ where }: any) => {
+        // Support both UUID (where.id) and slug (where.slug)
+        if (where?.id) return h.products.find((p) => p.id === where.id) ?? null;
+        if (where?.slug) return h.products.find((p) => p.slug === where.slug) ?? null;
+        return null;
+      },
       count: async ({ where }: any = {}) => {
         let rows = h.products.filter((p) => p.is_active !== false);
         if (where?.is_available) rows = rows.filter((p) => p.is_available !== false);
@@ -369,17 +373,37 @@ describe('isValidUuid & guard id', () => {
   });
 
   it('outlet() dengan id non-UUID → 404 (bukan 500)', async () => {
-    await expect(svc.outlet('tidak-ada')).rejects.toMatchObject({ status: 404 });
+      await expect(svc.outlet('tidak-ada')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('createProduct dengan category_id non-UUID → 400 (bukan 500)', async () => {
+      await expect(
+        svc.createProduct({ name: 'X', base_price: 1000, category_id: 'tidak-ada' }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
   });
 
-  it('createProduct dengan category_id non-UUID → 400 (bukan 500)', async () => {
-    await expect(
-      svc.createProduct({ name: 'X', base_price: 1000, category_id: 'tidak-ada' }),
-    ).rejects.toMatchObject({ status: 400 });
-  });
-});
+  // ═══════════ Product Slug Lookup (issue #79) ═══════════
 
-// ═══════════ Admin CRUD ═══════════
+  describe('Product slug lookup (issue #79)', () => {
+    it('product(uuid) & product(slug) → produk sama', async () => {
+      const byId = await svc.product('11111111-1111-4111-8111-111111111111');
+      const bySlug = await svc.product('espresso');
+      expect(byId.id).toBe(bySlug.id);
+      expect(byId.name).toBe('Espresso');
+      expect(bySlug.slug).toBe('espresso');
+    });
+
+    it('product(slug) untuk slug tidak ada → 404', async () => {
+      await expect(svc.product('slug-yang-tidak-ada')).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('product(uuid) untuk uuid tidak ada → 404', async () => {
+      await expect(svc.product('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')).rejects.toMatchObject({ status: 404 });
+    });
+  });
+
+  // ═══════════ Admin CRUD ═══════════
 describe('Admin katalog', () => {
   it('createProduct butuh category_id valid (400)', async () => {
     await expect(
