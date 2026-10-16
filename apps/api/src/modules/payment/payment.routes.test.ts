@@ -23,6 +23,12 @@ const ENV = vi.hoisted(() => {
   return { serverKey: 'SB-Mid-server-TESTKEY' };
 });
 
+// Respons `getTransactionStatus` yang bisa diatur per-test (untuk endpoint verify).
+const coreStatus = vi.hoisted(() => ({
+  value: null as null | Record<string, unknown>,
+  error: null as null | { statusCode: number; message: string },
+}));
+
 // State in-memory untuk Prisma mock.
 const db = vi.hoisted(() => ({
   payments: [] as any[],
@@ -48,9 +54,16 @@ vi.mock('midtrans-client', () => {
     }
   }
   class CoreApi {
-    async getTransactionStatus() {
-      return { transaction_status: 'settlement' };
-    }
+    transaction = {
+      status: async () => {
+        if (coreStatus.error) {
+          const e: any = new Error(coreStatus.error.message);
+          e.statusCode = coreStatus.error.statusCode;
+          throw e;
+        }
+        return coreStatus.value ?? { transaction_status: 'settlement' };
+      },
+    };
   }
   return { default: { Snap, CoreApi } };
 });
@@ -108,6 +121,11 @@ vi.mock('../../config/prisma.js', () => {
           }
           return null;
         },
+        findMany: async ({ where }: any = {}) =>
+          db.paymentIntents
+            .filter((pi) => !where?.order_id || pi.order_id === where.order_id)
+            .slice()
+            .reverse(),
         create: async ({ data }: any) => {
           db.paymentIntents.push(data);
           return data;
@@ -168,6 +186,9 @@ beforeEach(() => {
   db.orders.length = 0;
   db.logs.length = 0;
   db.idempotency.clear();
+  db.paymentIntents.length = 0;
+  coreStatus.value = null;
+  coreStatus.error = null;
 });
 
 describe('GET /payments/methods — daftar metode aktif (publik)', () => {
@@ -370,5 +391,98 @@ describe('POST /payments/webhook/:provider — callback gateway', () => {
     expect(b.status).toBe(200);
     expect(db.payments).toHaveLength(1);
     expect(db.logs).toHaveLength(1);
+  });
+});
+
+describe('POST /payments/:orderId/verify — aksi lanjutan pasca-bayar', () => {
+  const INTENT = {
+    id: 'pi-1',
+    order_id: ORDER_ID,
+    provider: 'midtrans',
+    provider_order_id: 'CS-abc-qris-1',
+    method: 'qris',
+    status: 'pending',
+    created_at: new Date(),
+  };
+
+  it('order tidak ada → 404 NOT_FOUND', async () => {
+    const res = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(res.status).toBe(404);
+    expect(expectError(res.json).code).toBe('NOT_FOUND');
+  });
+
+  it('tanpa payment intent → status "unknown" (belum ada transaksi)', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    const res = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(res.status).toBe(200);
+    const data = expectOk(res.json);
+    expect(data.status).toBe('unknown');
+    expect(data.order_status).toBe('PENDING');
+  });
+
+  it('gateway settlement → order jadi PAID + payment tercatat (pesanan masuk antrian)', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    db.paymentIntents.push(INTENT);
+    coreStatus.value = {
+      order_id: INTENT.provider_order_id,
+      transaction_id: 'trx-verify-1',
+      transaction_status: 'settlement',
+      status_code: '200',
+      gross_amount: GROSS,
+      payment_type: 'qris',
+    };
+
+    const res = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(res.status).toBe(200);
+    const data = expectOk(res.json);
+    expect(data.status).toBe('paid');
+    expect(data.order_status).toBe('PAID');
+    expect(db.orders[0].status).toBe('PAID');
+    expect(db.payments).toHaveLength(1);
+    expect(db.payments[0]).toMatchObject({ order_id: ORDER_ID, status: 'paid', transaction_id: 'trx-verify-1' });
+    expect(db.logs.some((l) => l.to_status === 'PAID')).toBe(true);
+  });
+
+  it('idempotent: verify dua kali tidak menggandakan payment/log', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    db.paymentIntents.push(INTENT);
+    coreStatus.value = {
+      transaction_id: 'trx-verify-2',
+      transaction_status: 'settlement',
+      status_code: '200',
+      gross_amount: GROSS,
+    };
+
+    await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    const second = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(expectOk(second.json).status).toBe('paid');
+    expect(db.payments).toHaveLength(1);
+    expect(db.logs.filter((l) => l.to_status === 'PAID')).toHaveLength(1);
+  });
+
+  it('gateway masih pending → status "pending", order tetap PENDING', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    db.paymentIntents.push(INTENT);
+    coreStatus.value = {
+      transaction_id: 'trx-verify-3',
+      transaction_status: 'pending',
+      status_code: '201',
+      gross_amount: GROSS,
+    };
+
+    const res = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(expectOk(res.json).status).toBe('pending');
+    expect(db.orders[0].status).toBe('PENDING');
+    expect(db.payments).toHaveLength(0);
+  });
+
+  it('transaksi belum dikenal gateway (404) → status "unknown"', async () => {
+    db.orders.push({ id: ORDER_ID, status: 'PENDING' });
+    db.paymentIntents.push(INTENT);
+    coreStatus.error = { statusCode: 404, message: 'Transaction not found' };
+
+    const res = await srv.request('POST', `/api/v1/payments/${ORDER_ID}/verify`);
+    expect(res.status).toBe(200);
+    expect(expectOk(res.json).status).toBe('unknown');
   });
 });

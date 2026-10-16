@@ -56,6 +56,11 @@ vi.mock('../../config/redis.js', () => ({
 
 vi.mock('./sse.controller.js', () => ({
   publishOrderEvent: (key: string, payload: any) => void h.events.push({ key, payload }),
+  // publishOrderStatus = siaran ke order_id + tracking_token (fix UI tak update).
+  publishOrderStatus: (order: any, payload: any) => {
+    h.events.push({ key: order.id, payload });
+    if (order.tracking_token) h.events.push({ key: order.tracking_token, payload });
+  },
   streamOrderEvents: () => undefined,
 }));
 
@@ -235,6 +240,12 @@ vi.mock('../../config/prisma.js', () => {
     outlet: {
               findUnique: async ({ where: _where }: any = {}) => {
                 return h.outlets.find((o) => o.id === _where.id) ?? null;
+              },
+            },
+            user: {
+              findUnique: async ({ where }: any = {}) => {
+                if (!where?.id) return null;
+                return { id: where.id, outlet_id: 'outlet-1' };
               },
             },
             $transaction: async (fn: any) => fn(tx),
@@ -526,6 +537,28 @@ describe('updateStatus — state machine kanonik', () => {
     expect(h.events.length).toBeGreaterThanOrEqual(1);
     expect(h.events.some(e => e.payload?.status === 'PAID')).toBe(true);
   });
+
+  /**
+   * REGRESI (bug "UI tidak ter-update setelah pembayaran"):
+   * PaymentPage guest berlangganan SSE dengan key = tracking_token, jadi event
+   * HARUS disiarkan ke order_id DAN tracking_token. Dulu hanya order_id →
+   * halaman pembayaran macet "Menunggu pembayaran" walau order sudah PAID.
+   */
+  it('publish event ke order_id DAN tracking_token (UI guest ikut ter-update)', async () => {
+    const o = seedOrder({ status: 'PENDING', tracking_token: 'tok-xyz' });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    const keys = h.events.filter(e => e.payload?.status === 'PAID').map(e => e.key);
+    expect(keys).toContain(o.id);
+    expect(keys).toContain('tok-xyz');
+  });
+
+  it('order tanpa tracking_token tetap aman (hanya order_id)', async () => {
+    const o = seedOrder({ status: 'PENDING', tracking_token: null });
+    await svc.updateStatus(o.id, { status: 'PAID' });
+    const keys = h.events.filter(e => e.payload?.status === 'PAID').map(e => e.key);
+    expect(keys).toContain(o.id);
+    expect(keys).not.toContain(null);
+  });
 });
 
 // ═══════════════ customer cancel (ADR-012) ═══════════════
@@ -632,12 +665,21 @@ describe('history & queue', () => {
     expect(r.meta.total).toBe(2);
   });
 
-  it('queue default status PAID,CONFIRMED', async () => {
+  it('queue default memuat SEMUA status aktif (alur 4 kolom lengkap)', async () => {
     seedOrder({ status: 'PAID' });
     seedOrder({ status: 'CONFIRMED' });
-    seedOrder({ status: 'PENDING' });
+    seedOrder({ status: 'BEING_PREPARED' });
+    seedOrder({ status: 'READY' });
+    seedOrder({ status: 'COMPLETED' });
+    seedOrder({ status: 'PENDING' });     // belum dibayar → di luar antrian
+    seedOrder({ status: 'CANCELLED' });   // batal → di luar antrian
     const r = await svc.queue({});
-    expect(r).toHaveLength(2);
+    // REGRESI: dulu default hanya PAID,CONFIRMED → order hilang begitu
+    // BEING_PREPARED/READY, sehingga tak ada aksi lanjutan di papan.
+    expect(r).toHaveLength(5);
+    expect(r.map((o: any) => o.status).sort()).toEqual(
+      ['BEING_PREPARED', 'COMPLETED', 'CONFIRMED', 'PAID', 'READY'],
+    );
   });
 
   it('queue menerima filter status eksplisit', async () => {

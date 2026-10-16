@@ -61,6 +61,13 @@ afterEach(() => {
 
 describe('useOrderTracking — SSE (guest token)', () => {
   it('membuka SSE ke /orders/track/:token/events dan menerapkan status_change', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { status: 'PENDING', updated_at: '2026-10-13T09:00:00Z' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
     const r = render(probe({ token: 'tok-abc' }, {}, sink));
 
     await waitFor(() => expect(MockEventSource.instances.length).toBe(1));
@@ -101,6 +108,30 @@ describe('useOrderTracking — SSE (guest token)', () => {
     expect(fetchMock).toHaveBeenCalled();
     const calledUrl = String(fetchMock.mock.calls[0][0]);
     expect(calledUrl).toContain('/orders/track/tok-fail');
+    r.unmount();
+  });
+
+  /**
+   * REGRESI (bug "lacak orderan" macet di 'Memuat status pesanan…'):
+   * Guest yang membuka halaman SETELAH order dibuat tak akan pernah menerima
+   * `status_change` (event hanya dikirim saat status BERUBAH). Hook harus
+   * memuat status AWAL lewat GET /orders/track/:token, bukan menunggu event.
+   */
+  it('memuat status AWAL untuk guest tanpa menunggu status_change', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { status: 'PAID', updated_at: '2026-10-13T09:00:00Z' } }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const r = render(probe({ token: 'tok-initial' }, {}, sink));
+
+    // TANPA memicu event apa pun, status harus terisi dari fetch awal.
+    await waitFor(() => expect(sink.current?.status).toBe('PAID'));
+    expect(fetchMock).toHaveBeenCalled();
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/orders/track/tok-initial');
+    expect(MockEventSource.instances.length).toBe(1); // SSE tetap dibuka
     r.unmount();
   });
 });

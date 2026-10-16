@@ -4,7 +4,7 @@ import { redisCache, redisPubSub } from '../../config/redis.js';
 import { env } from '../../config/env.js';
 import { BadRequest, NotFound, Forbidden, Conflict } from '../../lib/http.js';
 import { cartKeyFor, readCart, writeCart, priceCart, mergeGuestCart, normalizeCartItemInput, readCartMeta, writeCartMeta, clearCartMeta } from './cart.service.js';
-import { publishOrderEvent } from './sse.controller.js';
+import { publishOrderEvent, publishOrderStatus } from './sse.controller.js';
 import PDFDocument from 'pdfkit';
 
 export class OrderService {
@@ -118,7 +118,28 @@ export class OrderService {
 
       // Normalisasi items untuk memastikan field konsisten
       const normalizedItems = items.map(normalizeCartItemInput);
-    
+
+      // Resolusi outlet (WAJIB agar order muncul di dashboard admin / antrian outlet).
+      // Guest memilih outlet saat checkout; staff memakai outlet miliknya bila tak dikirim.
+      // Sebelumnya order dibuat dengan outlet_id=null → `GET /orders/queue?outlet_id=` kosong.
+      let outletId: string | null = null;
+      const requestedOutlet =
+        typeof input.outlet_id === 'string' && input.outlet_id.trim() ? input.outlet_id.trim() : null;
+      if (requestedOutlet) {
+        const outlet = await prisma.outlet.findUnique({
+          where: { id: requestedOutlet },
+          select: { id: true, is_active: true },
+        });
+        if (!outlet) throw BadRequest('Outlet tidak ditemukan');
+        if (!outlet.is_active) throw BadRequest('Outlet tidak aktif');
+        outletId = outlet.id;
+      } else if (userId) {
+        // Staff/member dengan outlet ter-scope: pakai outlet miliknya.
+        const u = await prisma.user.findUnique({ where: { id: userId }, select: { outlet_id: true } });
+        if (u?.outlet_id) outletId = u.outlet_id;
+      }
+      if (!outletId) throw BadRequest('outlet_id wajib diisi untuk membuat pesanan');
+
       // Baca meta cart (voucher, points)
       const meta = await readCartMeta(key);
       const discount = meta?.discount ?? 0;
@@ -197,6 +218,7 @@ export class OrderService {
           data: {
             order_number,
             user_id: userId ?? null,
+            outlet_id: outletId,
             status: 'PENDING',
             total: priced.total,
             subtotal: priced.subtotal,
@@ -330,7 +352,15 @@ export class OrderService {
   }
 
   async queue(query: any) {
-    const statuses = query.status ? String(query.status).split(',') : ['PAID', 'CONFIRMED'];
+    // Default = SEMUA status aktif (bukan hanya PAID,CONFIRMED).
+    //
+    // Papan antrian punya 4 kolom (Baru·Diproses·Siap·Selesai) dan alurnya
+    // PAID → CONFIRMED → BEING_PREPARED → READY → COMPLETED. Bila default hanya
+    // PAID,CONFIRMED, order HILANG dari papan begitu staff klik "Mulai siapkan"
+    // (BEING_PREPARED) → tak ada aksi lanjutan → customer macet di "Sedang
+    // disiapkan". CANCELLED tetap dikecualikan (tidak relevan di antrian kerja).
+    const ACTIVE_STATUSES = ['PAID', 'CONFIRMED', 'BEING_PREPARED', 'READY', 'COMPLETED'];
+    const statuses = query.status ? String(query.status).split(',') : ACTIVE_STATUSES;
     const outletId = typeof query.outlet_id === 'string' ? query.outlet_id : undefined;
     return prisma.order.findMany({
       where: {
@@ -490,7 +520,7 @@ export class OrderService {
                                             timestamp: new Date().toISOString(),
                                           }));
 
-              publishOrderEvent(orderId, { status: 'CANCELLED', timestamp: new Date().toISOString() });
+              publishOrderStatus(order, { status: 'CANCELLED', timestamp: new Date().toISOString() });
               return updated;
             }
 
@@ -571,7 +601,7 @@ export class OrderService {
       }),
     );
 
-    publishOrderEvent(orderId, { status: body.status, timestamp: new Date().toISOString() });
+    publishOrderStatus(order, { status: body.status, timestamp: new Date().toISOString() });
         return updated;
           }
 

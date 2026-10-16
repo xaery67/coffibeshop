@@ -63,9 +63,17 @@ export function Header() {
               <span aria-hidden="true">🚪</span>
             </button>
           ) : (
-            <Link to="/login" aria-label="Masuk" title="Masuk" className={iconLinkCls}>
-              <span aria-hidden="true">👤</span>
-            </Link>
+            <>
+              <Link
+                to="/register"
+                className="rounded-lg px-2 py-2 text-sm font-semibold text-brand hover:bg-brand-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+              >
+                Daftar
+              </Link>
+              <Link to="/login" aria-label="Masuk" title="Masuk" className={iconLinkCls}>
+                <span aria-hidden="true">👤</span>
+              </Link>
+            </>
           )}
         </div>
       </div>

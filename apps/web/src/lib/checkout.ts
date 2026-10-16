@@ -169,12 +169,20 @@ export function composeNotes(draft: CheckoutDraft): string | undefined {
   return notes ? notes.slice(0, 300) : undefined;
 }
 
-/** Payload `POST /orders/checkout` (CheckoutInput, PRD-BACKEND §4). */
+/**
+ * Payload `POST /orders/checkout` (CheckoutInput, PRD-BACKEND §4).
+ *
+ * `outlet_id` WAJIB dikirim: order tanpa outlet tidak akan pernah muncul di
+ * antrian outlet (`GET /orders/queue?outlet_id=`) — bug "pesanan tak masuk
+ * dashboard admin" setelah pembayaran.
+ */
 export function buildCheckoutPayload(draft: CheckoutDraft) {
   if (!draft.paymentMethod) throw new Error('Metode pembayaran belum dipilih');
+  if (!draft.outletId) throw new Error('Outlet belum dipilih');
   return {
     fulfillment_type: draft.fulfillment,
     payment_method: draft.paymentMethod,
+    outlet_id: draft.outletId,
     notes: composeNotes(draft),
   };
 }

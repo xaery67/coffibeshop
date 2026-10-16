@@ -47,6 +47,12 @@ paymentRouter.post('/initiate', optionalAuth, asyncHandler(async (req, res) => {
   sendOk(res, result, 201);
 }));
 
+/** POST /api/v1/payments/:orderId/verify — tarik status langsung dari gateway (aksi lanjutan pasca-bayar). */
+paymentRouter.post('/:orderId/verify', optionalAuth, asyncHandler(async (req, res) => {
+  const paymentService = await getPaymentService();
+  sendOk(res, await paymentService.verifyPayment(req.params.orderId));
+}));
+
 /** POST /api/v1/payments/webhook/:provider — callback gateway (verifikasi signature). */
 paymentRouter.post('/webhook/:provider', asyncHandler(async (req, res) => {
   const providerName = req.params.provider;

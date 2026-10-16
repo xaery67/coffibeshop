@@ -5,7 +5,7 @@ import { AppError, Conflict, NotFound, InternalServerError } from '../../lib/htt
 import { createMidtransProvider } from './providers/midtrans.provider.js';
 import { createXenditProvider } from './providers/xendit.provider.js';
 import { PaymentProvider, InitiatePaymentInput, InitiatePaymentResult, WebhookVerificationResult } from './providers/payment-provider.interface.js';
-import { publishOrderEvent } from '../order/sse.controller.js';
+import { publishOrderEvent, publishOrderStatus } from '../order/sse.controller.js';
 
 export class PaymentService {
   private providers: Map<string, PaymentProvider> = new Map();
@@ -194,6 +194,63 @@ export class PaymentService {
     return verification;
   }
 
+  /**
+   * **Aksi lanjutan pasca-bayar** — tarik status transaksi langsung dari gateway.
+   *
+   * Latar: webhook Midtrans tidak selalu sampai ke dev/produksi (tanpa URL publik
+   * yang bisa dijangkau gateway), sehingga order tertahan `PENDING` dan TIDAK
+   * muncul di antrian outlet (`GET /orders/queue` default = PAID,CONFIRMED).
+   * Endpoint ini membuat FE bisa "menyusul" status: bila gateway bilang
+   * settlement/capture → order ditandai `PAID` (idempotent, via `transaction_id`).
+   */
+  async verifyPayment(orderId: string): Promise<{
+    order_id: string;
+    status: 'paid' | 'pending' | 'failed' | 'unknown';
+    provider: string | null;
+    order_status: string;
+  }> {
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw NotFound(`Order ${orderId} not found`);
+
+    // Ambil intent terbaru (ganti metode = intent baru; yang terakhir paling relevan).
+    const intents = await prisma.paymentIntent.findMany({
+      where: { order_id: orderId },
+      orderBy: { created_at: 'desc' },
+      take: 5,
+    });
+
+    if (intents.length === 0) {
+      return { order_id: orderId, status: 'unknown', provider: null, order_status: order.status };
+    }
+
+    for (const intent of intents) {
+      const provider = this.providers.get(intent.provider);
+      if (!provider?.fetchTransactionStatus) continue;
+
+      const verification = await provider.fetchTransactionStatus(intent.provider_order_id);
+      if (!verification) continue;
+
+      if (verification.success) {
+        await prisma.paymentIntent.update({
+          where: { id: intent.id },
+          data: { status: 'settled', updated_at: new Date() },
+        });
+        await this.processSuccessfulPayment(verification, orderId);
+        const updated = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } });
+        return { order_id: orderId, status: 'paid', provider: intent.provider, order_status: updated?.status ?? 'PAID' };
+      }
+
+      // Status final negatif → laporkan; PENDING gateway tetap 'pending'.
+      if (['deny', 'cancel', 'expire', 'failure'].includes(verification.status)) {
+        await this.processFailedPayment(verification, orderId);
+        return { order_id: orderId, status: 'failed', provider: intent.provider, order_status: order.status };
+      }
+      return { order_id: orderId, status: 'pending', provider: intent.provider, order_status: order.status };
+    }
+
+    return { order_id: orderId, status: 'unknown', provider: intents[0].provider, order_status: order.status };
+  }
+
   private async processSuccessfulPayment(verification: WebhookVerificationResult, orderId: string) {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -244,7 +301,7 @@ export class PaymentService {
       });
 
       // Emit event for notification (async, no worker yet)
-      publishOrderEvent(order.id, {
+      publishOrderStatus(order, {
         status: 'PAID',
         timestamp: new Date().toISOString(),
       });

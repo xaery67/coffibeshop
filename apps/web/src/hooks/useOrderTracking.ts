@@ -25,6 +25,14 @@ export interface TrackState {
   connected: boolean;
   mode: TrackingMode;
   error: string | null;
+  /**
+   * Paksa muat ulang status SEKARANG (tanpa menunggu interval SSE/polling).
+   *
+   * Dipakai halaman pembayaran setelah `POST /payments/:orderId/verify` bilang
+   * gateway sudah settled: tanpa ini UI tetap "Menunggu pembayaran" walau order
+   * sudah PAID (event SSE bisa tak sampai / telat).
+   */
+  refresh: () => Promise<void>;
 }
 
 export interface TrackingTarget {
@@ -43,6 +51,7 @@ const INITIAL: TrackState = {
   connected: false,
   mode: 'idle',
   error: null,
+  refresh: async () => {},
 };
 
 function normalizeTarget(target?: string | TrackingTarget): TrackingTarget {
@@ -151,6 +160,11 @@ export function useOrderTracking(
       }
       try {
         setState((s) => ({ ...s, mode: 'sse' }));
+        // Ambil status AWAL sekarang juga. Tanpa ini halaman guest yang dibuka
+        // SETELAH order dibuat (kasus normal) tak pernah tahu status terkini —
+        // `status_change` hanya datang saat status BERUBAH, jadi UI macet di
+        // "Memuat status pesanan…" sampai ada perubahan status.
+        void pollOnce();
         es = new EventSource(`${API_BASE}/orders/track/${token}/events`);
         es.addEventListener('status_change', (e) => {
           try {
@@ -199,5 +213,14 @@ export function useOrderTracking(
     };
   }, [token, orderId, pollMs, apply, pollOnce]);
 
-  return state;
+  /**
+   * `refresh` — muat ulang status sekarang juga (dipakai PaymentPage setelah
+   * `verify` bilang gateway sudah settled, agar UI langsung berubah tanpa
+   * menunggu SSE/polling).
+   */
+  const refresh = useCallback(async () => {
+    await pollOnce();
+  }, [pollOnce]);
+
+  return { ...state, refresh };
 }

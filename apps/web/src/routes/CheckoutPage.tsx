@@ -63,6 +63,15 @@ export function CheckoutPage() {
     setDraft((d) => ({ ...d, fulfillment }));
   }, [fulfillment]);
 
+  // Outlet wajib untuk SEMUA fulfillment (order tanpa outlet tak masuk antrian admin).
+  // Delivery pun dipenuhi dari outlet; default ke outlet pertama bila belum dipilih.
+  useEffect(() => {
+    const list = outlets.data ?? [];
+    if (list.length > 0 && !draft.outletId) {
+      setDraft((d) => ({ ...d, outletId: list[0].id, outletName: list[0].name }));
+    }
+  }, [outlets.data, draft.outletId]);
+
   const update = (patch: Partial<CheckoutDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const goTo = (index: number) => {
@@ -72,7 +81,7 @@ export function CheckoutPage() {
   };
 
   const validateCurrent = () =>
-    validateStep(step, draft, { requireOutlet: draft.fulfillment !== 'delivery' });
+    validateStep(step, draft, { requireOutlet: true });
 
   const onNext = () => {
     const errs = validateCurrent();
@@ -178,36 +187,37 @@ export function CheckoutPage() {
 
         {step === 'schedule' && (
           <div className="space-y-4">
-            {draft.fulfillment !== 'delivery' && (
-              <div className="space-y-1">
-                <label htmlFor="outlet" className="block text-sm font-semibold text-text">
-                  Outlet
-                </label>
-                <select
-                  id="outlet"
-                  value={draft.outletId ?? ''}
-                  onChange={(e) => {
-                    const o = (outlets.data ?? []).find((x) => x.id === e.target.value);
-                    update({ outletId: e.target.value || null, outletName: o?.name });
-                  }}
-                  aria-invalid={errors.outletId ? true : undefined}
-                  aria-describedby={errors.outletId ? 'outlet-error' : undefined}
-                  className="min-h-[44px] w-full rounded-lg border border-border bg-white px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
-                >
-                  <option value="">Pilih outlet…</option>
-                  {(outlets.data ?? []).map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-                {errors.outletId && (
-                  <p id="outlet-error" className="text-caption text-error">
-                    {errors.outletId}
-                  </p>
-                )}
-              </div>
-            )}
+            <div className="space-y-1">
+              <label htmlFor="outlet" className="block text-sm font-semibold text-text">
+                Outlet
+              </label>
+              <select
+                id="outlet"
+                value={draft.outletId ?? ''}
+                onChange={(e) => {
+                  const o = (outlets.data ?? []).find((x) => x.id === e.target.value);
+                  update({ outletId: e.target.value || null, outletName: o?.name });
+                }}
+                aria-invalid={errors.outletId ? true : undefined}
+                aria-describedby={errors.outletId ? 'outlet-error' : undefined}
+                className="min-h-[44px] w-full rounded-lg border border-border bg-white px-3 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-focus)]"
+              >
+                <option value="">Pilih outlet…</option>
+                {(outlets.data ?? []).map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              {errors.outletId && (
+                <p id="outlet-error" className="text-caption text-error">
+                  {errors.outletId}
+                </p>
+              )}
+              <p className="text-caption text-text-muted">
+                Pesanan diproses di outlet ini; pilih outlet agar masuk antrian dapur.
+              </p>
+            </div>
 
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold text-text">Waktu</legend>
