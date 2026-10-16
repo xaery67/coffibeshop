@@ -132,12 +132,28 @@ async function main() {
   }
 
   await prisma.voucher.upsert({
-    where: { code: 'WELCOME10' },
-    update: {},
-    create: { code: 'WELCOME10', discount_amount: 10000, min_purchase: 50000 },
-  });
+      where: { code: 'WELCOME10' },
+      update: {},
+      create: { code: 'WELCOME10', discount_amount: 10000, min_purchase: 50000 },
+    });
 
-  console.log('✅ Seed selesai. Owner:', owner.email, '| Outlet:', outlet.code);
+    // ── Reward Katalog (issue #76) ──
+    const rewards = [
+      { name: 'Potong Rp 10.000', description: 'Diskon Rp 10.000 untuk pembelian min. Rp 50.000', points_cost: 100, discount_amount: 10000, min_purchase: 50000, stock: 100 },
+      { name: 'Potong Rp 25.000', description: 'Diskon Rp 25.000 untuk pembelian min. Rp 100.000', points_cost: 250, discount_amount: 25000, min_purchase: 100000, stock: 50 },
+      { name: 'Gratis Extra Shot', description: 'Extra shot gratis untuk 1 minuman', points_cost: 50, discount_amount: 5000, min_purchase: 20000, stock: 200 },
+      { name: 'Gratis Large Upgrade', description: 'Upgrade ukuran Regular ke Large gratis', points_cost: 80, discount_amount: 5000, min_purchase: 25000, stock: 150 },
+    ];
+
+    for (const r of rewards) {
+      await prisma.reward.upsert({
+        where: { name: r.name },
+        update: {},
+        create: r,
+      });
+    }
+
+    console.log('✅ Seed selesai. Owner:', owner.email, '| Outlet:', outlet.code);
 }
 
 main()
