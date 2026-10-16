@@ -61,7 +61,7 @@ function CustomerShell() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/menu" element={<MenuPage />} />
-            <Route path="/product/:id" element={<ProductDetailPage />} />
+            <Route path="/product/:slugOrId" element={<ProductDetailPage />} />
             <Route path="/cart" element={<CartPage />} />
             <Route path="/checkout" element={<CheckoutPage />} />
             <Route path="/payment/:orderId" element={<PaymentPage />} />

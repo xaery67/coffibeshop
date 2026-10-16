@@ -41,9 +41,9 @@ function initialSelection(product: ProductDTO): Selection {
 
 /** Product Detail & Kustomisasi (PRD-FRONTEND §2.3-C) — harga real-time via PricingEngine. */
 export function ProductDetailPage() {
-  const { id } = useParams();
+  const { slugOrId } = useParams();
   const navigate = useNavigate();
-  const { data: product, isLoading, error, refetch } = useProduct(id);
+  const { data: product, isLoading, error, refetch } = useProduct(slugOrId);
   const add = useCartStore((s) => s.add);
 
   const [selection, setSelection] = useState<Selection | null>(null);
