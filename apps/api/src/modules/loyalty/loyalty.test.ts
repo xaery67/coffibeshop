@@ -12,6 +12,13 @@ const h = vi.hoisted(() => ({
 vi.mock('../../config/prisma.js', () => {
   const prisma = {
     $transaction: async (fn: any) => fn(prisma),
+    $queryRaw: async (query: any, userId: string) => {
+      const rows = h.loyaltyPoints.filter(
+        (l) => l.user_id === userId
+      );
+      const balance = rows.reduce((s, r) => s + (r.type === 'earned' ? r.points : -r.points), 0);
+      return [{ balance: BigInt(balance) }];
+    },
     loyaltyPoint: {
       aggregate: async ({ where }: any) => {
         const rows = h.loyaltyPoints.filter(
@@ -50,9 +57,21 @@ vi.mock('../../config/prisma.js', () => {
                 return rows;
               },
           findUnique: async ({ where }: any) => {
-            return h.rewards.find((r) => r.id === where.id) ?? null;
-          },
-          update: async ({ where, data }: any) => {
+                      return h.rewards.find((r) => r.id === where.id) ?? null;
+                    },
+                    updateMany: async ({ where, data }: any) => {
+                      const reward = h.rewards.find((r) => r.id === where.id);
+                      if (!reward) return { count: 0 };
+            
+                      const stockOk = reward.stock === null || (reward.stock !== null && reward.stock > 0);
+                      if (!stockOk) return { count: 0 };
+            
+                      if (data.stock?.decrement !== undefined) {
+                        reward.stock = (reward.stock ?? 0) - data.stock.decrement;
+                      }
+                      return { count: 1 };
+                    },
+                    update: async ({ where, data }: any) => {
             const r = h.rewards.find((x) => x.id === where.id);
             if (r) {
               if (data.stock?.decrement !== undefined) {
