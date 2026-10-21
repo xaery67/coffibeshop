@@ -38,4 +38,13 @@ export interface PaymentProvider {
   initiate(input: InitiatePaymentInput): Promise<InitiatePaymentResult>;
   verifyWebhook(payload: Record<string, unknown>, signature: string | undefined): WebhookVerificationResult;
   isHealthy(): Promise<boolean>;
+
+  /**
+   * Tarik status transaksi LANGSUNG dari gateway (bukan dari payload webhook).
+   *
+   * Dipakai sebagai **aksi lanjutan** pasca-bayar: webhook Midtrans tidak selalu
+   * sampai (mis. dev tanpa tunnel publik), sehingga order nyangkut `PENDING`.
+   * `null` = provider tak mengenali `providerOrderId` (transaksi belum ada).
+   */
+  fetchTransactionStatus?(providerOrderId: string): Promise<WebhookVerificationResult | null>;
 }

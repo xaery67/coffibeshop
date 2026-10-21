@@ -221,6 +221,8 @@ export interface CartDTO {
 export const CheckoutInput = z.object({
   fulfillment_type: z.nativeEnum(FulfillmentType),
   payment_method: z.nativeEnum(PaymentMethod),
+  /** Outlet tempat pesanan dipenuhi (WAJIB untuk pickup/dine_in agar masuk antrian outlet). */
+  outlet_id: z.string().uuid().optional(),
   address_id: z.string().uuid().optional(),
   voucher_code: z.string().optional(),
   redeem_points: z.number().int().min(0).optional(),

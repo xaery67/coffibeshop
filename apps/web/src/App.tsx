@@ -28,6 +28,10 @@ const ProfilePage = lazy(() =>
 );
 /** Login staff/owner — halaman mandiri (issue #60). */
 const LoginPage = lazy(() => import('./routes/LoginPage.js').then((m) => ({ default: m.LoginPage })));
+/** Register member — halaman mandiri (issue #60 lanjutan). */
+const RegisterPage = lazy(() =>
+  import('./routes/RegisterPage.js').then((m) => ({ default: m.RegisterPage })),
+);
 
 /** Admin — shell & halaman terpisah (bundle sendiri). */
 const AdminRoutes = lazy(() => import('./routes/admin/AdminRoutes.js').then((m) => ({ default: m.AdminRoutes })));
@@ -90,6 +94,7 @@ export function App() {
     <Suspense fallback={<RouteFallback />}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/admin/*" element={<AdminRoutes />} />
         <Route path="/*" element={<CustomerShell />} />
       </Routes>
