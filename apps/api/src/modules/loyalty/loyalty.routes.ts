@@ -8,10 +8,14 @@ import { z } from 'zod';
 export const loyaltyRouter = Router();
 const service = new LoyaltyService();
 
-/** Zod schema for redeem request. */
+/** Zod schema for redeem request - supports reward_id (new) or points_to_redeem (deprecated). */
 const RedeemInput = z.object({
-  points_to_redeem: z.number().int().min(1, 'points_to_redeem minimal 1'),
-});
+  reward_id: z.string().uuid('reward_id harus UUID valid').optional(),
+  points_to_redeem: z.number().int().min(1, 'points_to_redeem minimal 1').optional(),
+}).refine(
+  (data) => data.reward_id || data.points_to_redeem,
+  { message: 'Harus menyertakan reward_id atau points_to_redeem' }
+);
 
 /** GET /api/v1/loyalty/_status — health check. */
 loyaltyRouter.get('/_status', asyncHandler(async (_req, res) =>
@@ -25,6 +29,15 @@ loyaltyRouter.get(
   asyncHandler(async (req, res) => {
     const points = await service.getPoints((req as any).user.id);
     sendOk(res, points);
+  }),
+);
+
+/** GET /api/v1/loyalty/rewards — daftar reward aktif (katalog). */
+loyaltyRouter.get(
+  '/rewards',
+  asyncHandler(async (_req, res) => {
+    const rewards = await service.getRewards();
+    sendOk(res, rewards);
   }),
 );
 
@@ -43,7 +56,12 @@ loyaltyRouter.post(
   requireAuth,
   validate(RedeemInput),
   asyncHandler(async (req, res) => {
-    const result = await service.redeemPoints((req as any).user.id, req.body.points_to_redeem);
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
+    const result = await service.redeemPoints(
+      (req as any).user.id,
+      req.body,
+      idempotencyKey
+    );
     sendOk(res, result, 201);
   }),
 );
