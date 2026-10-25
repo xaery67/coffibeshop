@@ -21,7 +21,7 @@
   "dependencies": {
     "@coffibeshop/shared": "*",
     "@prisma/client": "^5.22.0",
-    "@supabase/supabase-js": "^2.117.3",
+    "@supabase/supabase-js": "^2.118.0",
     "@types/pdfkit": "^0.17.6",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.28.1",
