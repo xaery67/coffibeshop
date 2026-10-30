@@ -230,7 +230,52 @@ REGISTRY_URL, REGISTRY_USERNAME, REGISTRY_PASSWORD
 
 ---
 
-## 7. Troubleshooting
+## 7. End-to-end test (Playwright)
+
+E2E menguji UI nyata terhadap API nyata — bukan mock.
+
+```bash
+# 1. Infra (Postgres + Redis). API & web dijalankan lokal dari worktree ini.
+docker compose up -d postgres redis
+
+# 2. Prisma client + data seed (wajib sekali per checkout/worktree)
+npm --workspace=@coffibeshop/api run db:generate
+npm --workspace=@coffibeshop/api run db:migrate
+npm --workspace=@coffibeshop/api run db:seed
+
+# 3. API menunjuk DB LOKAL — jangan pakai Supabase (lihat catatan di bawah)
+cp .env.example apps/api/.env   # lalu set DATABASE_URL ke postgres lokal:
+#   DATABASE_URL=postgresql://coffibeshop:coffibeshop@localhost:5432/coffibeshop
+#   REDIS_CACHE_URL=redis://localhost:6379
+#   REDIS_QUEUE_URL=redis://localhost:6379
+
+# 4. Jalankan stack + test
+npm run dev:api      # terminal 1 (port 4000)
+npm run dev:web      # terminal 2 (port 5173)
+npm run test:e2e     # terminal 3 — 22 test, desktop + mobile
+```
+
+| Perintah | Fungsi |
+|---|---|
+| `npm run test:e2e` | jalankan semua test (chromium + Pixel 7) |
+| `npm run test:e2e:ui` | mode interaktif Playwright |
+| `npm run test:e2e:report` | buka laporan HTML terakhir |
+| `E2E_BASE_URL=http://localhost:5173 npx playwright test` | arahkan ke URL lain |
+
+**Kredensial** diambil dari `e2e/fixtures.ts` (akun seed `owner@coffibeshop.id`).
+Timpa lewat `E2E_OWNER_EMAIL` / `E2E_OWNER_PASSWORD` untuk environment lain.
+
+**Catatan penting:** `docker-compose.yml` meneruskan `DATABASE_URL` dari `.env` root.
+Bila `.env` berisi Supabase, container `api` akan memakai DB remote dan test gagal
+dengan `database: down` di `/ready`. Untuk E2E, jalankan API dari host dengan
+`apps/api/.env` yang menunjuk Postgres lokal.
+
+Pembayaran **tidak** diuji end-to-end: `POST /payments/initiate` memanggil Midtrans
+dan butuh server key sandbox asli. Test berhenti setelah order + tracking token dibuat.
+
+---
+
+## 8. Troubleshooting
 
 | Gejala | Penyebab | Solusi |
 |--------|----------|--------|

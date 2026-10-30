@@ -18,6 +18,9 @@
     "build": "npm run build --workspace=@coffibeshop/shared && npm run build --workspaces --if-present",
     "test": "npm run build --workspace=@coffibeshop/shared && npm run test --workspaces --if-present",
     "lint": "npm run build --workspace=@coffibeshop/shared && eslint .",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
     "db:migrate": "npm run db:migrate --workspace=@coffibeshop/api",
@@ -33,6 +36,7 @@
   "license": "MIT",
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.64.1",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
     "typescript-eslint": "^8.71.1"

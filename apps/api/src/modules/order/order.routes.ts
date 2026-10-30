@@ -100,7 +100,7 @@ orderRouter.get(
 );
 
 /** GET /api/v1/orders/track/:token/events — SSE guest (PUBLIK). */
-orderRouter.get('/track/:token/events', sseRateLimit(), streamOrderEvents);
+orderRouter.get('/track/:token/events', sseRateLimit(), asyncHandler(streamOrderEvents));
 
 /** GET /api/v1/orders/:id */
 orderRouter.get(
@@ -110,7 +110,7 @@ orderRouter.get(
 );
 
 /** GET /api/v1/orders/:id/events — SSE member (ADR-009). */
-orderRouter.get('/:id/events', requireAuth, sseRateLimit(), streamOrderEvents);
+orderRouter.get('/:id/events', requireAuth, sseRateLimit(), asyncHandler(streamOrderEvents));
 
 /** POST /api/v1/orders/:id/reorder — reorder 1-klik (ADR-010). */
 orderRouter.post(
