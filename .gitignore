@@ -37,6 +37,8 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+# Worktree checkout sementara untuk review PR (bukan bagian repo)
+_review/
 
 # ── Prisma / DB ──
 apps/api/prisma/migrations/dev.db*
