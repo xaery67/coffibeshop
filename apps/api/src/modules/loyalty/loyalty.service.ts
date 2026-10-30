@@ -80,29 +80,32 @@ export class LoyaltyService {
     const idempotencyKeyFull = idempotencyKey ? `loyalty:redeem:${userId}:${idempotencyKey}` : null;
     const requestHash = JSON.stringify(input);
 
-    // Check idempotency BEFORE transaction
-    if (idempotencyKeyFull) {
-      const existing = await prisma.paymentIdempotency.findUnique({
-        where: { idempotency_key: idempotencyKeyFull },
-      });
-      if (existing) {
-        // Validate request_hash matches
-        if (existing.request_hash !== requestHash) {
-          throw Conflict('Idempotency-Key conflict: request payload berbeda');
-        }
-        // Return cached response
-        return existing.response;
-      }
-    }
-
-    // Atomic transaction: check balance (FOR UPDATE), decrement stock atomically, create loyaltyPoint + voucher
+    // Semua langkah di dalam satu tx, diserialkan oleh row-lock `users`.
+    // Tanpa lock ini: saldo bisa dibelanjakan dobel DAN idempotency bocor
+    // (cek-lalu-tulis di luar tx → N request paralel = N voucher).
     const result = await prisma.$transaction(async (tx) => {
-      // 1) Check balance with row lock to prevent double-spend
+      // 1) Lock baris user. FOR UPDATE tak boleh dengan agregat, jadi kunci
+      //    barisnya dulu, baru hitung saldo di query terpisah.
+      await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId}::uuid FOR UPDATE`;
+
+      // 2) Idempotency: aman cek-lalu-tulis karena lock di atas.
+      if (idempotencyKeyFull) {
+        const existing = await tx.paymentIdempotency.findUnique({
+          where: { idempotency_key: idempotencyKeyFull },
+        });
+        if (existing) {
+          if (existing.request_hash !== requestHash) {
+            throw Conflict('Idempotency-Key conflict: request payload berbeda');
+          }
+          return existing.response;
+        }
+      }
+
+      // 3) Saldo (agregat, tanpa FOR UPDATE)
       const balRows = await tx.$queryRaw<{ balance: bigint }[]>`
         SELECT COALESCE(SUM(CASE WHEN type = 'earned' THEN points ELSE -points END), 0)::bigint AS balance
         FROM loyalty_points
-        WHERE user_id = ${userId}
-        FOR UPDATE
+        WHERE user_id = ${userId}::uuid
       `;
       const balance = Number(balRows[0]?.balance ?? 0);
       if (pointsToRedeem > balance) {
@@ -151,7 +154,7 @@ export class LoyaltyService {
         },
       });
 
-      return {
+      const response = {
         voucher_code: voucherCode,
         points_redeemed: pointsToRedeem,
         discount_amount: discountAmount,
@@ -159,19 +162,22 @@ export class LoyaltyService {
         expires_at: expiresAt,
         reward_name: reward?.name ?? null,
       };
-    });
 
-    // Store idempotency response AFTER successful transaction
-    if (idempotencyKeyFull) {
-      await prisma.paymentIdempotency.create({
-        data: {
-          idempotency_key: idempotencyKeyFull,
-          provider: 'loyalty',
-          request_hash: requestHash,
-          response: result,
-        },
-      });
-    }
+      // 6) Simpan idempotency di tx yang sama — commit bersama voucher,
+      //    sehingga request paralel melihat hasil yang sama.
+      if (idempotencyKeyFull) {
+        await tx.paymentIdempotency.create({
+          data: {
+            idempotency_key: idempotencyKeyFull,
+            provider: 'loyalty',
+            request_hash: requestHash,
+            response,
+          },
+        });
+      }
+
+      return response;
+    });
 
     return result;
   }
